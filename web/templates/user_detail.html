@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Пользователь {{ user.id }} — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>{{ user.full_name }}</h1>
+<p>ID: {{ user.id }}, TG ID: {{ user.tg_id }}</p>
+<p>Роль: {{ user.role }}, Статус: {{ user.status }}</p>
+<p>Город: {{ user.city }}, Телефон: {{ user.phone }}</p>
+<p>Навыки: {{ user.skills|join(", ") if user.skills else "—" }}</p>
+<p><a href="/users">← К списку</a></p>
+{% endblock %}

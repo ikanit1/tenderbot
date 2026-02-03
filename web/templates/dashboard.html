@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>Дашборд</h1>
+<p>Пользователей: <strong>{{ users_total }}</strong></p>
+<ul>
+    {% for row in users_by_role %}
+    <li>{{ row[0] }}: {{ row[1] }}</li>
+    {% endfor %}
+</ul>
+<p>Тендеров: <strong>{{ tenders_total }}</strong></p>
+<ul>
+    {% for row in tenders_by_status %}
+    <li>{{ row[0] }}: {{ row[1] }}</li>
+    {% endfor %}
+</ul>
+<p>Откликов сегодня: <strong>{{ apps_today }}</strong>, за неделю: <strong>{{ apps_week }}</strong></p>
+<h2>Последние пользователи</h2>
+<table>
+    <tr><th>ID</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Город</th></tr>
+    {% for u in recent_users %}
+    <tr>
+        <td><a href="/users/{{ u.id }}">{{ u.id }}</a></td>
+        <td>{{ u.full_name }}</td>
+        <td>{{ u.role }}</td>
+        <td>{{ u.status }}</td>
+        <td>{{ u.city }}</td>
+    </tr>
+    {% endfor %}
+</table>
+<h2>Последние тендеры</h2>
+<table>
+    <tr><th>ID</th><th>Название</th><th>Город</th><th>Статус</th></tr>
+    {% for t in recent_tenders %}
+    <tr>
+        <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
+        <td>{{ t.title }}</td>
+        <td>{{ t.city }}</td>
+        <td>{{ t.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

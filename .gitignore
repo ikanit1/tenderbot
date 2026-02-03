@@ -1,0 +1,20 @@
+# Конфиг с токеном — не коммитить
+.env
+
+# SQLite (если используете)
+*.db
+*.db-journal
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

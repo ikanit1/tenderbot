@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Рейтинги — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>Отзывы и рейтинги</h1>
+<table>
+    <tr><th>ID</th><th>Тендер</th><th>Кому (to_user_id)</th><th>Оценка</th><th>Комментарий</th><th>Дата</th></tr>
+    {% for r in reviews %}
+    <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.tender_id }}</td>
+        <td>{{ r.to_user_id }}</td>
+        <td>{{ r.rating }}/5</td>
+        <td>{{ r.comment or "—" }}</td>
+        <td>{{ r.created_at.strftime("%d.%m.%Y %H:%M") if r.created_at else "—" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+<p>Средние рейтинги по пользователям (to_user_id): в карточке пользователя.</p>
+{% endblock %}

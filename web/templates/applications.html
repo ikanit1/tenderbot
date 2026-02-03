@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Отклики — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>Отклики</h1>
+<p><a href="/applications">Все</a> | <a href="/applications?status=applied">Новые</a> | <a href="/applications?status=selected">Выбранные</a></p>
+<table>
+    <tr><th>ID</th><th>Тендер</th><th>Исполнитель</th><th>Статус</th><th>Дата</th></tr>
+    {% for a in applications %}
+    <tr>
+        <td>{{ a.id }}</td>
+        <td><a href="/tenders/{{ a.tender.id }}">{{ a.tender.title }}</a></td>
+        <td><a href="/users/{{ a.user.id }}">{{ a.user.full_name }}</a></td>
+        <td>{{ a.status }}</td>
+        <td>{{ a.created_at.strftime("%d.%m.%Y %H:%M") if a.created_at else "—" }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

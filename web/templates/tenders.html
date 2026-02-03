@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Тендеры — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>Тендеры</h1>
+<p><a href="/tenders">Все</a> | <a href="/tenders?status=draft">Черновики</a> | <a href="/tenders?status=open">Открытые</a> | <a href="/tenders?status=closed">Закрытые</a></p>
+<table>
+    <tr><th>ID</th><th>Название</th><th>Город</th><th>Категория</th><th>Статус</th><th>Создатель</th></tr>
+    {% for t in tenders %}
+    <tr>
+        <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
+        <td>{{ t.title }}</td>
+        <td>{{ t.city }}</td>
+        <td>{{ t.category }}</td>
+        <td>{{ t.status }}</td>
+        <td>{% if t.creator %}{{ t.creator.full_name }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Тендер {{ tender.id }} — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>{{ tender.title }}</h1>
+<p>ID: {{ tender.id }}, Статус: {{ tender.status }}</p>
+<p>Город: {{ tender.city }}, Категория: {{ tender.category }}</p>
+<p>Бюджет: {{ tender.budget or "—" }}</p>
+<p>Описание: {{ tender.description }}</p>
+<p>Создатель: {% if tender.creator %}{{ tender.creator.full_name }} (ID {{ tender.creator.id }}){% else %}—{% endif %}</p>
+<h2>Отклики</h2>
+<table>
+    <tr><th>ID</th><th>Исполнитель</th><th>Статус</th></tr>
+    {% for a in tender.applications %}
+    <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.user.full_name }} ({{ a.user_id }})</td>
+        <td>{{ a.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+<p><a href="/tenders">← К списку</a></p>
+{% endblock %}
