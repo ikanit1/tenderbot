@@ -1,24 +1,27 @@
 # handlers/customer.py — команды заказчика: мои тендеры
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import settings
 from database.models import User, Tender, TenderApplication, TenderStatus
+from handlers.keyboards import get_tender_actions_kb
 
 router = Router()
 
 
-def _is_admin(tg_id: int) -> bool:
-    return tg_id == settings.ADMIN_ID
-
-
 @router.message(Command("my_tenders"))
-async def cmd_my_tenders(message: Message, session: AsyncSession) -> None:
+@router.message(F.text == "📝 Мои тендеры")
+async def cmd_my_tenders(message: Message, session: AsyncSession, state: FSMContext) -> None:
     """Список тендеров заказчика (draft/open/in_progress/closed) с кнопками."""
+    # Отменяем FSM состояние, если оно активно
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+    
     result = await session.execute(
         select(User).where(User.tg_id == message.from_user.id)
     )
@@ -56,15 +59,7 @@ async def cmd_my_tenders(message: Message, session: AsyncSession) -> None:
             f"Откликов: {apps_count}"
             + (f" | Выбран: исполнитель #{selected.user_id}" if selected else "")
         )
-        buttons = []
-        if t.status == TenderStatus.DRAFT.value:
-            buttons.append([InlineKeyboardButton(text="Опубликовать", callback_data=f"publish:{t.id}")])
-        if t.status in (TenderStatus.OPEN.value, TenderStatus.IN_PROGRESS.value):
-            buttons.append([InlineKeyboardButton(text="Закрыть", callback_data=f"close_tender:{t.id}")])
-            buttons.append([InlineKeyboardButton(text="Отменить", callback_data=f"cancel_tender:{t.id}")])
-        if buttons:
-            await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-        else:
-            await message.answer(text)
+        kb = get_tender_actions_kb(t.id, t.status)
+        await message.answer(text, reply_markup=kb if kb.inline_keyboard else None)
     if len(tenders) > 10:
         await message.answer("… показаны последние 10. Полный список — в веб-админке.")

@@ -1,5 +1,5 @@
 # web/routes/dashboard.py
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -23,7 +23,7 @@ async def dashboard(
 ):
     if get_session_user(request) is None:
         return RedirectResponse(url="/login", status_code=302)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = today - timedelta(days=7)
     users_total = db.execute(select(func.count(User.id))).scalar() or 0

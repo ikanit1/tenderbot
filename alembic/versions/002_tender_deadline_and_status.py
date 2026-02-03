@@ -15,7 +15,18 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _table_exists(conn, table: str) -> bool:
+    """Проверка наличия таблицы (SQLite и PostgreSQL)."""
+    if conn.dialect.name == "sqlite":
+        r = conn.execute(sa.text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"))
+        return r.fetchone() is not None
+    from sqlalchemy import inspect
+    return inspect(conn).has_table(table)
+
+
 def _column_exists(conn, table: str, column: str) -> bool:
+    if not _table_exists(conn, table):
+        return False
     if conn.dialect.name == "sqlite":
         r = conn.execute(sa.text(f"PRAGMA table_info({table})"))
         return any(row[1] == column for row in r)
@@ -25,7 +36,8 @@ def _column_exists(conn, table: str, column: str) -> bool:
 
 def upgrade() -> None:
     conn = op.get_bind()
-    if not _column_exists(conn, "tenders", "deadline"):
+    # Проверяем существование таблицы перед изменением
+    if _table_exists(conn, "tenders") and not _column_exists(conn, "tenders", "deadline"):
         with op.batch_alter_table("tenders") as batch_op:
             batch_op.add_column(sa.Column("deadline", sa.DateTime(), nullable=True))
 

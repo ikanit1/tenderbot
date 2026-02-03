@@ -2,21 +2,63 @@
 {% block title %}Тендер {{ tender.id }} — TenderBot Admin{% endblock %}
 {% block content %}
 <h1>{{ tender.title }}</h1>
-<p>ID: {{ tender.id }}, Статус: {{ tender.status }}</p>
-<p>Город: {{ tender.city }}, Категория: {{ tender.category }}</p>
-<p>Бюджет: {{ tender.budget or "—" }}</p>
-<p>Описание: {{ tender.description }}</p>
-<p>Создатель: {% if tender.creator %}{{ tender.creator.full_name }} (ID {{ tender.creator.id }}){% else %}—{% endif %}</p>
-<h2>Отклики</h2>
+<div style="margin-bottom: 1rem;">
+    <a href="/tenders/{{ tender.id }}/edit" style="padding: 0.5rem 1rem; background: #ffc107; color: black; text-decoration: none; border-radius: 4px; margin-right: 0.5rem;">✏️ Редактировать</a>
+    <a href="/tenders" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">← К списку</a>
+</div>
+
+<div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+    <p><strong>ID:</strong> {{ tender.id }}</p>
+    <p><strong>Статус:</strong> {{ tender.status }}</p>
+    <p><strong>Город:</strong> {{ tender.city }}</p>
+    <p><strong>Категория:</strong> {{ tender.category }}</p>
+    <p><strong>Бюджет:</strong> {{ tender.budget or "—" }}</p>
+    <p><strong>Дедлайн:</strong> {% if tender.deadline %}{{ tender.deadline.strftime('%d.%m.%Y %H:%M') }}{% else %}—{% endif %}</p>
+    <p><strong>Создатель:</strong> {% if tender.creator %}{{ tender.creator.full_name }} (ID {{ tender.creator.id }}){% else %}—{% endif %}</p>
+    <p><strong>Описание:</strong><br>{{ tender.description }}</p>
+</div>
+
+<div style="margin-bottom: 1rem;">
+    <h3>Изменить статус:</h3>
+    <form method="post" action="/tenders/{{ tender.id }}/status" style="display: inline-block;">
+        <select name="new_status" style="padding: 0.5rem;">
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if tender.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" style="padding: 0.5rem 1rem; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; margin-left: 0.5rem;">Изменить</button>
+    </form>
+</div>
+
+<h2>Отклики ({{ tender.applications|length }})</h2>
+{% if tender.applications %}
 <table>
-    <tr><th>ID</th><th>Исполнитель</th><th>Статус</th></tr>
+    <tr><th>ID</th><th>Исполнитель</th><th>Телефон</th><th>Город</th><th>Статус</th><th>Действия</th></tr>
     {% for a in tender.applications %}
     <tr>
         <td>{{ a.id }}</td>
-        <td>{{ a.user.full_name }} ({{ a.user_id }})</td>
-        <td>{{ a.status }}</td>
+        <td><a href="/users/{{ a.user.id }}">{{ a.user.full_name }}</a></td>
+        <td>{{ a.user.phone }}</td>
+        <td>{{ a.user.city }}</td>
+        <td>
+            {% if a.status == "applied" %}<span style="color: orange;">⏳ Ожидает</span>{% endif %}
+            {% if a.status == "selected" %}<span style="color: green;">✅ Выбран</span>{% endif %}
+            {% if a.status == "rejected" %}<span style="color: red;">❌ Отклонён</span>{% endif %}
+        </td>
+        <td>
+            {% if a.status == "applied" %}
+            <form method="post" action="/applications/{{ a.id }}/select" style="display: inline-block;">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em;">✅ Выбрать</button>
+            </form>
+            <form method="post" action="/applications/{{ a.id }}/reject" style="display: inline-block;">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em; margin-left: 0.25rem;">❌ Отклонить</button>
+            </form>
+            {% endif %}
+        </td>
     </tr>
     {% endfor %}
 </table>
-<p><a href="/tenders">← К списку</a></p>
+{% else %}
+<p>Откликов пока нет.</p>
+{% endif %}
 {% endblock %}

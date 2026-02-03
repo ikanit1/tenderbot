@@ -1,13 +1,11 @@
 # handlers/tender.py — отклик на тендер («Откликнуться»)
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from sqlalchemy import func
 
 from config import settings
 from database.models import User, Tender, TenderApplication, Review, UserStatus, TenderStatus
@@ -48,9 +46,19 @@ async def apply_to_tender(
     if not tender:
         await callback.answer("Тендер не найден или приём откликов закрыт.", show_alert=True)
         return
-    if tender.deadline and datetime.utcnow() > tender.deadline:
-        await callback.answer("Срок приёма откликов по этому тендеру истёк.", show_alert=True)
-        return
+    if tender.deadline:
+        # Приводим deadline к UTC для корректного сравнения
+        deadline_utc = tender.deadline
+        if deadline_utc.tzinfo is None:
+            # Если naive datetime, считаем что это UTC
+            deadline_utc = deadline_utc.replace(tzinfo=timezone.utc)
+        else:
+            # Если есть timezone, конвертируем в UTC
+            deadline_utc = deadline_utc.astimezone(timezone.utc)
+        
+        if datetime.now(timezone.utc) > deadline_utc:
+            await callback.answer("Срок приёма откликов по этому тендеру истёк.", show_alert=True)
+            return
 
     result = await session.execute(
         select(TenderApplication).where(

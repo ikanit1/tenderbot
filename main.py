@@ -3,16 +3,31 @@ import asyncio
 import logging
 from pathlib import Path
 
+# Сначала импортируем только config для миграций
+from config import settings
+
+# Выполняем миграции ДО импорта модулей, которые могут создать async engine
+def _run_migrations() -> None:
+    """Запуск миграций Alembic до head (синхронно, ДО создания async engine)."""
+    from alembic.config import Config
+    from alembic import command
+    root = Path(__file__).resolve().parent
+    alembic_cfg = Config(str(root / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
+
+# Выполняем миграции сразу при импорте модуля (до создания async engine)
+_run_migrations()
+
+# Теперь безопасно импортируем остальные модули
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from aiogram.utils.token import TokenValidationError
 
-from config import settings
-from database.session import init_db
 from handlers import router
 from middlewares.db import DbSessionMiddleware
+from middlewares.fsm_cancel import FSMCancelMiddleware
 
 # Логирование
 logging.basicConfig(
@@ -20,16 +35,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _run_migrations() -> None:
-    """Запуск миграций Alembic до head (синхронно при старте)."""
-    from alembic.config import Config
-    from alembic import command
-    root = Path(__file__).resolve().parent
-    # Путь к alembic.ini и script_location = alembic (относительно корня проекта)
-    alembic_cfg = Config(str(root / "alembic.ini"))
-    command.upgrade(alembic_cfg, "head")
 
 
 def _check_token() -> None:
@@ -49,10 +54,11 @@ def _check_token() -> None:
 
 async def main() -> None:
     _check_token()
-    # Создание таблиц при старте (для новой БД)
+    # Миграции уже выполнены при импорте модуля
+    # Импортируем init_db (engine создастся только при первом использовании благодаря ленивой инициализации)
+    from database.session import init_db
+    # Создание таблиц через init_db (если миграции не создали все)
     await init_db()
-    # Приведение схемы к актуальной (колонка role и др.)
-    _run_migrations()
     logger.info("База данных инициализирована.")
 
     bot = Bot(
@@ -60,6 +66,9 @@ async def main() -> None:
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
     dp = Dispatcher()
+    # Middleware для отмены FSM при нажатии кнопок меню (должен быть ПЕРЕД DbSessionMiddleware)
+    dp.message.middleware(FSMCancelMiddleware())
+    dp.callback_query.middleware(FSMCancelMiddleware())
     dp.message.middleware(DbSessionMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware())
     dp.include_router(router)

@@ -1,10 +1,8 @@
 # alembic/env.py — окружение для миграций (синхронный драйвер)
-import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Импорт конфига и моделей
@@ -58,9 +56,16 @@ def run_migrations_online() -> None:
     connectable = context.config.attributes.get("connection", None)
     if connectable is None:
         from sqlalchemy import create_engine
+        database_url = config.get_main_option("sqlalchemy.url")
+        # Для SQLite добавляем timeout и check_same_thread=False
+        connect_args = {}
+        if "sqlite" in database_url:
+            connect_args["timeout"] = 20.0
+            connect_args["check_same_thread"] = False
         connectable = create_engine(
-            config.get_main_option("sqlalchemy.url"),
+            database_url,
             poolclass=pool.NullPool,
+            connect_args=connect_args,
         )
     with connectable.connect() as connection:
         do_run_migrations(connection)

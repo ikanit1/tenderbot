@@ -9,13 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database.models import User, Tender, TenderApplication, Review, UserStatus, TenderStatus
-from states.admin import AddTenderStates, ReviewStates
+from states.admin import ReviewStates
+from utils import is_admin
+from utils.chat_utils import answer_with_cleanup
 
 router = Router()
-
-
-def _is_admin(tg_id: int) -> bool:
-    return tg_id == settings.ADMIN_ID
 
 
 # ——— Модерация: Одобрить / Отклонить ———
@@ -24,7 +22,7 @@ async def moderation_approve(
     callback: CallbackQuery,
     session: AsyncSession,
 ) -> None:
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
     user_id = int(callback.data.replace("mod_approve:", ""))
@@ -50,7 +48,7 @@ async def moderation_reject(
     callback: CallbackQuery,
     session: AsyncSession,
 ) -> None:
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
     user_id = int(callback.data.replace("mod_reject:", ""))
@@ -71,11 +69,92 @@ async def moderation_reject(
     await callback.answer("Пользователь отклонён.")
 
 
+@router.message(F.text == "⚙️ Админ-панель")
+@router.message(F.text == "🏠 Главное меню")
+async def cmd_admin_menu(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Переключение между админ-меню и главным меню."""
+    # Отменяем FSM состояние, если оно активно
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+    
+    from handlers.keyboards import get_admin_menu_kb, get_main_menu_kb
+    result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
+    user = result.scalar_one_or_none()
+    
+    if message.text == "⚙️ Админ-панель":
+        if not is_admin(message.from_user.id):
+            await answer_with_cleanup(message, "❌ Доступ только для администратора.")
+            return
+        await answer_with_cleanup(
+            message,
+            "⚙️ <b>Админ-панель</b>\n\n"
+            "Выберите действие:",
+            reply_markup=get_admin_menu_kb(),
+        )
+    elif message.text == "🏠 Главное меню":
+        user_role = user.role if user else None
+        await answer_with_cleanup(
+            message,
+            "🏠 <b>Главное меню</b>",
+            reply_markup=get_main_menu_kb(user_role, is_admin(message.from_user.id)),
+        )
+
+
+@router.message(F.text == "👥 Модерация")
+async def cmd_moderation(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Просмотр заявок на модерацию."""
+    # Отменяем FSM состояние, если оно активно
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+    
+    if not is_admin(message.from_user.id):
+        await answer_with_cleanup(message, "❌ Доступ только для администратора.")
+        return
+    
+    result = await session.execute(
+        select(User).where(User.status == UserStatus.PENDING_MODERATION.value)
+        .order_by(User.id.desc())
+        .limit(10)
+    )
+    users = result.scalars().all()
+    
+    if not users:
+        await answer_with_cleanup(message, "✅ Нет заявок на модерацию.")
+        return
+    
+    from handlers.keyboards import get_moderation_kb
+    for user in users:
+        role_str = {"executor": "Исполнитель", "customer": "Заказчик", "both": "Оба"}.get(user.role, user.role)
+        skills_str = ", ".join(user.skills) if user.skills else "—"
+        text = (
+            f"🆕 <b>Новая заявка</b>\n\n"
+            f"ФИО: {user.full_name}\n"
+            f"Роль: {role_str}\n"
+            f"Город: {user.city}\n"
+            f"Телефон: {user.phone}\n"
+            f"Навыки: {skills_str}\n"
+            f"TG ID: {user.tg_id}"
+        )
+        await answer_with_cleanup(message, text, reply_markup=get_moderation_kb(user.id))
+
+
+@router.message(F.text == "👷 Рабочие")
+async def cmd_workers_button(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Обработчик кнопки 'Рабочие'."""
+    # Отменяем FSM состояние, если оно активно
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+    await cmd_workers(message, session)
+
+
 # ——— Просмотр мастеров (рабочих) ———
 @router.message(Command("workers"))
 async def cmd_workers(message: Message, session: AsyncSession) -> None:
     """Админ: список всех зарегистрированных мастеров (исполнителей)."""
-    if not _is_admin(message.from_user.id):
+    if not is_admin(message.from_user.id):
         await message.answer("Доступ только для администратора.")
         return
     # Можно: /workers — все, /workers active — только одобренные
@@ -131,7 +210,7 @@ PAGE_SIZE = 5
 @router.message(Command("tenders"))
 async def cmd_tenders(message: Message, session: AsyncSession) -> None:
     """Админ: список тендеров с фильтром по статусу и пагинацией."""
-    if not _is_admin(message.from_user.id):
+    if not is_admin(message.from_user.id):
         await message.answer("Доступ только для администратора.")
         return
     args = (message.text or "").strip().split()
@@ -165,7 +244,7 @@ async def cmd_tenders(message: Message, session: AsyncSession) -> None:
 @router.callback_query(F.data.startswith("tenders_page:"))
 async def tenders_page_callback(callback: CallbackQuery, session: AsyncSession) -> None:
     """Пагинация списка тендеров."""
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
     parts = callback.data.replace("tenders_page:", "").split(":")
@@ -196,15 +275,25 @@ async def tenders_page_callback(callback: CallbackQuery, session: AsyncSession) 
     await callback.answer()
 
 
+@router.message(F.text == "📊 Статистика")
+async def cmd_stats_button(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Обработчик кнопки 'Статистика'."""
+    # Отменяем FSM состояние, если оно активно
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+    await cmd_stats(message, session)
+
+
 # ——— Статистика: /stats ———
 @router.message(Command("stats"))
 async def cmd_stats(message: Message, session: AsyncSession) -> None:
     """Админ: сводка по пользователям, тендерам, откликам."""
-    if not _is_admin(message.from_user.id):
+    if not is_admin(message.from_user.id):
         await message.answer("Доступ только для администратора.")
         return
-    from datetime import datetime, timedelta
-    now = datetime.utcnow()
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_ago = today - timedelta(days=7)
     # Пользователи по ролям и статусам
@@ -249,147 +338,25 @@ async def cmd_stats(message: Message, session: AsyncSession) -> None:
     await message.answer("\n".join(lines))
 
 
-# ——— Создание тендера: /add_tender (админ или заказчик с role customer/both) ———
+# ——— Создание тендера: только через веб-интерфейс ———
 @router.message(Command("add_tender"))
+@router.message(F.text == "➕ Создать тендер")
 async def cmd_add_tender(
     message: Message,
-    state: FSMContext,
     session: AsyncSession,
 ) -> None:
-    if _is_admin(message.from_user.id):
-        pass  # админ всегда может
-    else:
-        result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
-        user = result.scalar_one_or_none()
-        if not user or user.status != UserStatus.ACTIVE.value:
-            await message.answer("Создавать тендеры могут только одобренные заказчики. Пройдите регистрацию и дождитесь модерации.")
-            return
-        if user.role not in ("customer", "both"):
-            await message.answer("Создавать тендеры могут только заказчики. Зарегистрируйтесь как заказчик (/register) или используйте аккаунт с этой ролью.")
-            return
-    await state.set_state(AddTenderStates.title)
-    await message.answer("Введите название тендера:")
-
-
-@router.message(AddTenderStates.title, F.text)
-async def add_tender_title(message: Message, state: FSMContext) -> None:
-    await state.update_data(title=message.text.strip())
-    await state.set_state(AddTenderStates.category)
-    buttons = [
-        [InlineKeyboardButton(text=tag, callback_data=f"tcat:{tag}")]
-        for tag in settings.SKILL_TAGS
-    ]
-    await message.answer(
-        "Выберите тип (категорию) тендера:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    """Создание тендеров доступно только через веб-интерфейс."""
+    from config import settings
+    await answer_with_cleanup(
+        message,
+        "📋 <b>Создание тендеров</b>\n\n"
+        "Создание тендеров доступно только через веб-интерфейс.\n\n"
+        f"🌐 Откройте админ-панель: http://localhost:{settings.WEB_PORT}/tenders/create\n\n"
+        "Или используйте веб-интерфейс для полного управления системой.",
     )
 
 
-@router.callback_query(AddTenderStates.category, F.data.startswith("tcat:"))
-async def add_tender_category(callback: CallbackQuery, state: FSMContext) -> None:
-    category = callback.data.replace("tcat:", "")
-    await state.update_data(category=category)
-    await state.set_state(AddTenderStates.city)
-    await callback.message.edit_text(f"Категория: {category}")
-    await callback.message.answer("Введите город (локацию) тендера:")
-    await callback.answer()
-
-
-@router.message(AddTenderStates.city, F.text)
-async def add_tender_city(message: Message, state: FSMContext) -> None:
-    await state.update_data(city=message.text.strip())
-    await state.set_state(AddTenderStates.budget)
-    await message.answer("Введите бюджет (например: 100 000 руб или по договорённости):")
-
-
-@router.message(AddTenderStates.budget, F.text)
-async def add_tender_budget(message: Message, state: FSMContext) -> None:
-    await state.update_data(budget=message.text.strip())
-    await state.set_state(AddTenderStates.description)
-    await message.answer("Введите описание тендера:")
-
-
-@router.message(AddTenderStates.description, F.text)
-async def add_tender_description(message: Message, state: FSMContext) -> None:
-    await state.update_data(description=message.text.strip())
-    await state.set_state(AddTenderStates.deadline)
-    await message.answer(
-        "Дедлайн приёма откликов? Введите дату и время в формате ДД.ММ.ГГГГ ЧЧ:ММ "
-        "или напишите «нет» чтобы не указывать."
-    )
-
-
-@router.message(AddTenderStates.deadline, F.text)
-async def add_tender_deadline(
-    message: Message,
-    state: FSMContext,
-) -> None:
-    from datetime import datetime as dt
-    text = message.text.strip().lower()
-    deadline = None
-    if text and text not in ("нет", "no", "—", "-"):
-        try:
-            deadline = dt.strptime(message.text.strip(), "%d.%m.%Y %H:%M")
-        except ValueError:
-            try:
-                deadline = dt.strptime(message.text.strip(), "%d.%m.%Y")
-            except ValueError:
-                await message.answer("Неверный формат. Введите ДД.ММ.ГГГГ ЧЧ:ММ или «нет».")
-                return
-    await state.update_data(deadline=deadline)
-    data = await state.get_data()
-    dl_str = data["deadline"].strftime("%d.%m.%Y %H:%M") if data.get("deadline") else "не указан"
-    summary = (
-        "Проверьте данные тендера:\n\n"
-        f"Название: {data['title']}\n"
-        f"Категория: {data['category']}\n"
-        f"Город: {data['city']}\n"
-        f"Бюджет: {data['budget']}\n"
-        f"Описание: {data['description']}\n"
-        f"Дедлайн: {dl_str}\n\n"
-        "Сохранить как черновик? (да — сохранить, потом можно опубликовать; нет — отменить)"
-    )
-    await state.set_state(AddTenderStates.confirm)
-    await message.answer(summary)
-
-
-@router.message(AddTenderStates.confirm, F.text)
-async def add_tender_confirm(
-    message: Message,
-    state: FSMContext,
-    session: AsyncSession,
-) -> None:
-    if message.text.strip().lower() not in ("да", "yes", "ок"):
-        await state.clear()
-        await message.answer("Создание тендера отменено.")
-        return
-    data = await state.get_data()
-    created_by_user_id = None
-    result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
-    creator = result.scalar_one_or_none()
-    if creator:
-        created_by_user_id = creator.id
-    tender = Tender(
-        title=data["title"],
-        category=data["category"],
-        city=data["city"],
-        budget=data.get("budget"),
-        description=data["description"],
-        deadline=data.get("deadline"),
-        status=TenderStatus.DRAFT.value,
-        created_by_user_id=created_by_user_id,
-        created_by_tg_id=message.from_user.id,
-    )
-    session.add(tender)
-    await session.flush()
-    await state.clear()
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Опубликовать тендер", callback_data=f"publish:{tender.id}")]
-    ])
-    await message.answer(
-        f"Тендер «{tender.title}» сохранён как черновик. Нажмите «Опубликовать», чтобы разослать исполнителям.",
-        reply_markup=kb,
-    )
+# Создание тендеров через бота отключено - используется веб-интерфейс
 
 
 @router.callback_query(F.data.startswith("publish:"))
@@ -407,7 +374,7 @@ async def publish_tender(
         await callback.answer("Тендер не найден или уже опубликован.", show_alert=True)
         return
     # Только админ или создатель тендера
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         result = await session.execute(select(User).where(User.tg_id == callback.from_user.id))
         user = result.scalar_one_or_none()
         if not user or user.id != tender.created_by_user_id:
@@ -469,7 +436,7 @@ async def admin_select_executor(
         return
     tender = app.tender
     # Доступ: админ или создатель тендера
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         result = await session.execute(select(User).where(User.tg_id == callback.from_user.id))
         user = result.scalar_one_or_none()
         if not user or user.id != tender.created_by_user_id:
@@ -509,7 +476,7 @@ async def close_tender_callback(
     if not tender:
         await callback.answer("Тендер не найден.", show_alert=True)
         return
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         result = await session.execute(select(User).where(User.tg_id == callback.from_user.id))
         user = result.scalar_one_or_none()
         if not user or user.id != tender.created_by_user_id:
@@ -556,7 +523,7 @@ async def cancel_tender_callback(
     if not tender:
         await callback.answer("Тендер не найден.", show_alert=True)
         return
-    if not _is_admin(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         result = await session.execute(select(User).where(User.tg_id == callback.from_user.id))
         user = result.scalar_one_or_none()
         if not user or user.id != tender.created_by_user_id:

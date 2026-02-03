@@ -1,10 +1,12 @@
 # config.py — настройки приложения через pydantic-settings
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
 class Settings(BaseSettings):
     """Конфигурация бота и БД из переменных окружения."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     # Telegram
     BOT_TOKEN: str = Field(..., description="Токен бота от @BotFather")
@@ -40,10 +42,6 @@ class Settings(BaseSettings):
         ],
         description="Теги навыков для выбора при регистрации и создания тендеров",
     )
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 settings = Settings()

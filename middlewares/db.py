@@ -5,7 +5,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.session import async_session_maker
+from database.session import get_async_session_maker
 
 
 class DbSessionMiddleware(BaseMiddleware):
@@ -17,6 +17,7 @@ class DbSessionMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        async_session_maker = get_async_session_maker()
         async with async_session_maker() as session:
             data["session"] = session
             try:

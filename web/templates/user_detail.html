@@ -2,9 +2,47 @@
 {% block title %}Пользователь {{ user.id }} — TenderBot Admin{% endblock %}
 {% block content %}
 <h1>{{ user.full_name }}</h1>
-<p>ID: {{ user.id }}, TG ID: {{ user.tg_id }}</p>
-<p>Роль: {{ user.role }}, Статус: {{ user.status }}</p>
-<p>Город: {{ user.city }}, Телефон: {{ user.phone }}</p>
-<p>Навыки: {{ user.skills|join(", ") if user.skills else "—" }}</p>
-<p><a href="/users">← К списку</a></p>
+<div style="margin-bottom: 1rem;">
+    <a href="/users" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">← К списку</a>
+</div>
+
+<div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+    <p><strong>ID:</strong> {{ user.id }}</p>
+    <p><strong>TG ID:</strong> {{ user.tg_id }}</p>
+    <p><strong>Роль:</strong> {{ user.role }}</p>
+    <p><strong>Статус:</strong> 
+        {% if user.status == "active" %}<span style="color: green;">✅ Активен</span>{% endif %}
+        {% if user.status == "pending_moderation" %}<span style="color: orange;">⏳ На модерации</span>{% endif %}
+        {% if user.status == "banned" %}<span style="color: red;">❌ Заблокирован</span>{% endif %}
+    </p>
+    <p><strong>Город:</strong> {{ user.city }}</p>
+    <p><strong>Телефон:</strong> {{ user.phone }}</p>
+    {% if user.birth_date %}
+    <p><strong>Дата рождения:</strong> {{ user.birth_date.strftime('%d.%m.%Y') }}</p>
+    {% endif %}
+    <p><strong>Навыки:</strong> {{ user.skills|join(", ") if user.skills else "—" }}</p>
+    {% if user.created_at %}
+    <p><strong>Дата регистрации:</strong> {{ user.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+    {% endif %}
+</div>
+
+<div style="margin-bottom: 1rem;">
+    <h3>Действия модерации:</h3>
+    {% if user.status == "pending_moderation" %}
+    <form method="post" action="/users/{{ user.id }}/approve" style="display: inline-block;">
+        <button type="submit" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px;">✅ Одобрить</button>
+    </form>
+    <form method="post" action="/users/{{ user.id }}/reject" style="display: inline-block; margin-left: 0.5rem;">
+        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">❌ Отклонить</button>
+    </form>
+    {% elif user.status == "banned" %}
+    <form method="post" action="/users/{{ user.id }}/unban" style="display: inline-block;">
+        <button type="submit" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px;">🔓 Разблокировать</button>
+    </form>
+    {% elif user.status == "active" %}
+    <form method="post" action="/users/{{ user.id }}/ban" style="display: inline-block;">
+        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">🚫 Заблокировать</button>
+    </form>
+    {% endif %}
+</div>
 {% endblock %}

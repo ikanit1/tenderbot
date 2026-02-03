@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{% if tender %}Редактирование тендера{% else %}Создание тендера{% endif %} — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>{% if tender %}Редактирование тендера{% else %}Создание тендера{% endif %}</h1>
+<form method="post" action="{% if tender %}/tenders/{{ tender.id }}/edit{% else %}/tenders/create{% endif %}">
+    <div style="margin-bottom: 1rem;">
+        <label for="title">Название:</label><br>
+        <input type="text" id="title" name="title" value="{% if tender %}{{ tender.title }}{% endif %}" required style="width: 100%; padding: 0.5rem;">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="category">Категория:</label><br>
+        <select id="category" name="category" required style="width: 100%; padding: 0.5rem;">
+            <option value="">Выберите категорию</option>
+            {% for tag in skill_tags %}
+            <option value="{{ tag }}" {% if tender and tender.category == tag %}selected{% endif %}>{{ tag }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="city">Город:</label><br>
+        <input type="text" id="city" name="city" value="{% if tender %}{{ tender.city }}{% endif %}" required style="width: 100%; padding: 0.5rem;">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="budget">Бюджет:</label><br>
+        <input type="text" id="budget" name="budget" value="{% if tender %}{{ tender.budget or '' }}{% endif %}" style="width: 100%; padding: 0.5rem;" placeholder="Например: 100 000 руб">
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="description">Описание:</label><br>
+        <textarea id="description" name="description" required style="width: 100%; padding: 0.5rem; min-height: 150px;">{% if tender %}{{ tender.description }}{% endif %}</textarea>
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="deadline">Дедлайн (необязательно):</label><br>
+        <input type="datetime-local" id="deadline" name="deadline" value="{% if tender and tender.deadline %}{{ tender.deadline.strftime('%Y-%m-%dT%H:%M') }}{% endif %}" style="width: 100%; padding: 0.5rem;">
+    </div>
+    
+    {% if tender %}
+    <div style="margin-bottom: 1rem;">
+        <label for="status">Статус:</label><br>
+        <select id="status" name="status" required style="width: 100%; padding: 0.5rem;">
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if tender.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+    
+    <div style="margin-top: 1.5rem;">
+        <button type="submit" style="padding: 0.5rem 1.5rem; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px;">
+            {% if tender %}Сохранить{% else %}Создать{% endif %}
+        </button>
+        <a href="{% if tender %}/tenders/{{ tender.id }}{% else %}/tenders{% endif %}" style="margin-left: 1rem; padding: 0.5rem 1.5rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; display: inline-block;">
+            Отмена
+        </a>
+    </div>
+</form>
+{% endblock %}
+
