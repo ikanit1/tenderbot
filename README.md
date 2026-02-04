@@ -117,6 +117,51 @@ tenderbot/
 alembic upgrade head
 ```
 
+## Деплой на сервер
+
+После заливки файлов на сервер:
+
+1. **Python 3.11+** и виртуальное окружение:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate   # Linux/macOS
+   pip install -r requirements.txt
+   ```
+
+2. **Файл `.env`** в корне проекта (скопировать из `.env.example` и заполнить):
+   ```env
+   BOT_TOKEN=токен_от_BotFather
+   ADMIN_ID=ваш_telegram_id
+   DATABASE_URL=postgresql+asyncpg://user:password@host:5432/tenderbot
+   WEB_SECRET_KEY=длинная_случайная_строка
+   ADMIN_PASSWORD=надёжный_пароль
+   WEB_HOST=0.0.0.0
+   WEB_PORT=8000
+   ```
+   Для SQLite: `DATABASE_URL=sqlite+aiosqlite:///./data.db`
+
+3. **Миграции** (выполняются при первом запуске бота, или вручную):
+   ```bash
+   alembic upgrade head
+   ```
+
+4. **Запуск** (все в одном процессе):
+   ```bash
+   python run.py
+   ```
+   Или раздельно в screen/tmux/systemd:
+   - `python run.py --bot-only`
+   - `python run.py --web-only` (веб на порту из `WEB_PORT`)
+
+5. **Только веб с несколькими воркерами** (production):
+   ```bash
+   uvicorn web.main:app --host 0.0.0.0 --port 8000 --workers 2
+   ```
+
+Убедитесь, что на сервере открыт порт из `WEB_PORT` (по умолчанию 8000) и что PostgreSQL доступен по `DATABASE_URL`. Все команды выполняйте из **корня проекта** (где лежат `run.py` и `.env`).
+
+---
+
 ## Разработка
 
 ### Добавление новой миграции

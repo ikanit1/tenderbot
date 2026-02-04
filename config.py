@@ -1,12 +1,21 @@
 # config.py — настройки приложения через pydantic-settings
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+# .env всегда в корне проекта (рядом с config.py)
+_ROOT_DIR = Path(__file__).resolve().parent
+_ENV_FILE = _ROOT_DIR / ".env"
 
 
 class Settings(BaseSettings):
     """Конфигурация бота и БД из переменных окружения."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE),
+        env_file_encoding="utf-8",
+    )
 
     # Telegram
     BOT_TOKEN: str = Field(..., description="Токен бота от @BotFather")
