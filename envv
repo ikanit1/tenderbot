@@ -1,0 +1,17 @@
+# Скопируйте в .env и заполните (или заполните .envv и переименуйте в .env).
+# .envv коммитится в репозиторий как шаблон.
+
+BOT_TOKEN=8518469902:AAGKddobQKnyr9TuuQf6V4blB8eOJhhEpx8
+ADMIN_ID=947126451
+
+# SQLite — быстрый запуск без PostgreSQL
+DATABASE_URL=sqlite+aiosqlite:///./test.db
+
+# Вариант PostgreSQL (раскомментируйте и укажите свои данные):
+# DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/tenderbot
+
+# Веб-админка (опционально)
+# WEB_SECRET_KEY=сложная_строка_для_сессий
+# ADMIN_PASSWORD=пароль_входа
+# WEB_HOST=0.0.0.0
+# WEB_PORT=8005
