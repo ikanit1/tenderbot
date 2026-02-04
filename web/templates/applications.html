@@ -4,7 +4,7 @@
 <h1>Отклики</h1>
 <p><a href="/applications">Все</a> | <a href="/applications?status=applied">Новые</a> | <a href="/applications?status=selected">Выбранные</a></p>
 <table>
-    <tr><th>ID</th><th>Тендер</th><th>Исполнитель</th><th>Статус</th><th>Дата</th></tr>
+    <tr><th>ID</th><th>Тендер</th><th>Исполнитель</th><th>Статус</th><th>Дата</th><th>Действия</th></tr>
     {% for a in applications %}
     <tr>
         <td>{{ a.id }}</td>
@@ -12,6 +12,11 @@
         <td><a href="/users/{{ a.user.id }}">{{ a.user.full_name }}</a></td>
         <td>{{ a.status }}</td>
         <td>{{ a.created_at.strftime("%d.%m.%Y %H:%M") if a.created_at else "—" }}</td>
+        <td>
+            <form method="post" action="/applications/{{ a.id }}/delete" style="display: inline;" onsubmit="return confirm('Удалить отклик?');">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85em;">🗑</button>
+            </form>
+        </td>
     </tr>
     {% endfor %}
 </table>

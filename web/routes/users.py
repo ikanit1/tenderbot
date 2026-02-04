@@ -1,17 +1,47 @@
 # web/routes/users.py
-from fastapi import APIRouter, Request, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+import urllib.request
+import json
+
+from fastapi import APIRouter, Request, Depends, Query, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from typing import Annotated
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from pathlib import Path
 
+from config import settings
 from web.database import get_db
 from web.auth import get_session_user
-from database.models import User, Review
+from database.models import User, Review, UserStatus, UserRole
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
+
+
+def normalize_documents(documents) -> list:
+    """Приводит user.documents к списку {type, file_id, file_name?, mime_type?}. Поддержка старого формата (dict)."""
+    if not documents:
+        return []
+    if isinstance(documents, list):
+        return documents
+    # Legacy: {"photo_file_id": "...", "document_file_id": "...", "file_name": "...", "mime_type": "..."}
+    out = []
+    if documents.get("photo_file_id"):
+        out.append({
+            "type": "photo",
+            "file_id": documents["photo_file_id"],
+            "file_name": None,
+            "mime_type": "image/jpeg",
+        })
+    if documents.get("document_file_id"):
+        out.append({
+            "type": "document",
+            "file_id": documents["document_file_id"],
+            "file_name": documents.get("file_name"),
+            "mime_type": documents.get("mime_type"),
+        })
+    return out
 
 
 @router.get("", response_class=HTMLResponse)
@@ -40,6 +70,145 @@ async def users_list(
     )
 
 
+@router.get("/by-tg/{tg_id}/document")
+async def user_document_by_tg(
+    request: Request,
+    tg_id: int,
+    index: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """Прокси документа/фото по Telegram ID пользователя и индексу в списке. URL: /users/by-tg/947126451/document?index=0"""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.execute(select(User).where(User.tg_id == tg_id)).scalar_one_or_none()
+    if not user:
+        return Response(status_code=404)
+    docs_list = normalize_documents(user.documents)
+    if index >= len(docs_list):
+        return Response(status_code=404)
+    item = docs_list[index]
+    file_id = item.get("file_id")
+    if not file_id:
+        return Response(status_code=404)
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
+    try:
+        with urllib.request.urlopen(url) as r:
+            data = json.loads(r.read().decode())
+        if not data.get("ok"):
+            return Response(status_code=502)
+        file_path = data["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+        with urllib.request.urlopen(file_url) as f:
+            content = f.read()
+        doc_type = item.get("type") or "document"
+        file_name = item.get("file_name")
+        mime = item.get("mime_type") or ""
+        if doc_type == "photo":
+            media_type = "image/jpeg"
+            filename = "photo.jpg"
+        else:
+            filename = file_name or "document"
+            if mime.startswith("application/pdf") or (filename and filename.lower().endswith(".pdf")):
+                media_type = "application/pdf"
+            else:
+                media_type = mime or "application/octet-stream"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    except Exception:
+        return Response(status_code=502)
+
+
+@router.get("/{user_id}/edit", response_class=HTMLResponse)
+async def user_edit_form(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if not user:
+        return RedirectResponse(url="/users", status_code=302)
+    return templates.TemplateResponse(
+        "user_form.html",
+        {
+            "request": request,
+            "user": user,
+            "skill_tags": settings.SKILL_TAGS,
+            "roles": [r.value for r in UserRole],
+            "statuses": [s.value for s in UserStatus],
+        },
+    )
+
+
+@router.post("/{user_id}/edit", response_class=RedirectResponse)
+async def user_update(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+    full_name: Annotated[str, Form()] = None,
+    city: Annotated[str, Form()] = None,
+    phone: Annotated[str, Form()] = None,
+    role: Annotated[str, Form()] = None,
+    status: Annotated[str, Form()] = None,
+    skills: Annotated[list[str] | None, Form()] = None,
+):
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if not user:
+        return RedirectResponse(url="/users", status_code=302)
+    if full_name is not None:
+        user.full_name = full_name.strip()
+    if city is not None:
+        user.city = city.strip()
+    if phone is not None:
+        user.phone = phone.strip()
+    if role and role in [r.value for r in UserRole]:
+        user.role = role
+    if status and status in [s.value for s in UserStatus]:
+        user.status = status
+    if skills is not None:
+        user.skills = [s for s in skills if s] or None
+    db.commit()
+    return RedirectResponse(url=f"/users/{user_id}", status_code=302)
+
+
+@router.post("/{user_id}/delete", response_class=RedirectResponse)
+async def user_delete(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить пользователя (каскадно удалятся отклики, тикеты поддержки, отзывы с его участием)."""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if user:
+        db.delete(user)
+        db.commit()
+    return RedirectResponse(url="/users", status_code=302)
+
+
+@router.post("/{user_id}/documents/delete", response_class=RedirectResponse)
+async def user_documents_delete(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить приложенные документы пользователя (очистить ссылки, чтобы не копились на сервере)."""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if user:
+        user.documents = None
+        db.commit()
+    return RedirectResponse(url=f"/users/{user_id}", status_code=302)
+
+
 @router.get("/{user_id}", response_class=HTMLResponse)
 async def user_detail(
     request: Request,
@@ -51,4 +220,8 @@ async def user_detail(
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
         return RedirectResponse(url="/users", status_code=302)
-    return templates.TemplateResponse("user_detail.html", {"request": request, "user": user})
+    documents_list = normalize_documents(user.documents)
+    return templates.TemplateResponse(
+        "user_detail.html",
+        {"request": request, "user": user, "documents_list": documents_list},
+    )

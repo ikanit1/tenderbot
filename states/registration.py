@@ -1,11 +1,5 @@
-# states/registration.py — шаги регистрации исполнителя и заказчика
+# states/registration.py — шаги регистрации исполнителя
 from aiogram.fsm.state import State, StatesGroup
-
-
-class RoleChoiceStates(StatesGroup):
-    """Выбор роли перед регистрацией."""
-
-    role = State()
 
 
 class RegistrationStates(StatesGroup):
@@ -17,15 +11,6 @@ class RegistrationStates(StatesGroup):
     phone = State()
     skills = State()
     documents = State()
-    done = State()
-
-
-class CustomerRegistrationStates(StatesGroup):
-    """Укороченная регистрация заказчика: название/ФИО, город, контакт."""
-
-    full_name = State()
-    city = State()
-    phone = State()
     done = State()
 
 

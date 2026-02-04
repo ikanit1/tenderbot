@@ -5,6 +5,7 @@ from web.routes.users import router as users_router
 from web.routes.tenders import router as tenders_router
 from web.routes.applications import router as applications_router
 from web.routes.reviews import router as reviews_router
+from web.routes.support import router as support_router
 
 __all__ = [
     "login_router",
@@ -13,4 +14,5 @@ __all__ = [
     "tenders_router",
     "applications_router",
     "reviews_router",
+    "support_router",
 ]

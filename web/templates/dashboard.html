@@ -20,21 +20,22 @@
     <tr><th>ID</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Город</th></tr>
     {% for u in recent_users %}
     <tr>
-        <td><a href="/users/{{ u.id }}">{{ u.id }}</a></td>
-        <td>{{ u.full_name }}</td>
+        <td>{{ u.id }}</td>
+        <td><a href="/users/{{ u.id }}">{{ u.full_name }}</a></td>
         <td>{{ u.role }}</td>
         <td>{{ u.status }}</td>
         <td>{{ u.city }}</td>
     </tr>
     {% endfor %}
 </table>
+<p><a href="/users">Все пользователи</a> | <a href="/tenders">Все тендеры</a> | <a href="/applications">Отклики</a> | <a href="/reviews">Отзывы</a> | <a href="/support">Поддержка</a></p>
 <h2>Последние тендеры</h2>
 <table>
     <tr><th>ID</th><th>Название</th><th>Город</th><th>Статус</th></tr>
     {% for t in recent_tenders %}
     <tr>
-        <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
-        <td>{{ t.title }}</td>
+        <td>{{ t.id }}</td>
+        <td><a href="/tenders/{{ t.id }}">{{ t.title }}</a></td>
         <td>{{ t.city }}</td>
         <td>{{ t.status }}</td>
     </tr>

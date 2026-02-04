@@ -14,6 +14,24 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
+@router.post("/{application_id}/delete", response_class=RedirectResponse)
+async def application_delete(
+    request: Request,
+    application_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить отклик (например ошибочный или спам)."""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    app = db.execute(select(TenderApplication).where(TenderApplication.id == application_id)).scalar_one_or_none()
+    if app:
+        tender_id = app.tender_id
+        db.delete(app)
+        db.commit()
+        return RedirectResponse(url=f"/tenders/{tender_id}", status_code=302)
+    return RedirectResponse(url="/applications", status_code=302)
+
+
 @router.get("", response_class=HTMLResponse)
 async def applications_list(
     request: Request,

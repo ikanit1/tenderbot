@@ -44,7 +44,7 @@ class User(Base):
     phone: Mapped[str] = mapped_column(String(64), nullable=False)
     skills: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # список строк
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=UserStatus.PENDING_MODERATION.value)
-    documents: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    documents: Mapped[Optional[dict | list]] = mapped_column(JSON, nullable=True)  # список {type, file_id, file_name?, mime_type?} или legacy dict
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     tenders_created: Mapped[list["Tender"]] = relationship(
@@ -52,6 +52,9 @@ class User(Base):
     )
     applications: Mapped[list["TenderApplication"]] = relationship(
         "TenderApplication", back_populates="user"
+    )
+    support_tickets: Mapped[list["SupportTicket"]] = relationship(
+        "SupportTicket", back_populates="user"
     )
 
 
@@ -106,3 +109,40 @@ class Review(Base):
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class TicketStatus(str, Enum):
+    NEW = "new"           # админ ещё не ответил
+    IN_PROGRESS = "in_progress"  # идёт диалог
+    CLOSED = "closed"     # архив
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=TicketStatus.NEW.value
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    user: Mapped["User"] = relationship("User", back_populates="support_tickets")
+    messages: Mapped[list["SupportMessage"]] = relationship(
+        "SupportMessage", back_populates="ticket", cascade="all, delete-orphan"
+    )
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("support_tickets.id", ondelete="CASCADE"), nullable=False
+    )
+    author: Mapped[str] = mapped_column(String(16), nullable=False)  # "user" | "admin"
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    ticket: Mapped["SupportTicket"] = relationship("SupportTicket", back_populates="messages")

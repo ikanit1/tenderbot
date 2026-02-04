@@ -117,4 +117,4 @@ async def apply_to_tender(
         except Exception:
             pass
 
-    await callback.answer("Отклик отправлен. Ожидайте решения заказчика.")
+    await callback.answer("Отклик отправлен. Ожидайте решения по вашей заявке.")

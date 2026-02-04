@@ -2,7 +2,7 @@
 {% block title %}Пользователи — TenderBot Admin{% endblock %}
 {% block content %}
 <h1>Пользователи</h1>
-<p><a href="/users">Все</a> | <a href="/users?role=executor">Исполнители</a> | <a href="/users?role=customer">Заказчики</a> | <a href="/users?status=active">Активные</a> | <a href="/users?status=pending_moderation">На модерации</a></p>
+<p><a href="/users">Все</a> | <a href="/users?role=executor">Исполнители</a> | <a href="/users?status=active">Активные</a> | <a href="/users?status=pending_moderation">На модерации</a></p>
 <table>
     <tr><th>ID</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Город</th><th>Рейтинг</th></tr>
     {% for u in users %}

@@ -4,7 +4,10 @@
 <h1>{{ tender.title }}</h1>
 <div style="margin-bottom: 1rem;">
     <a href="/tenders/{{ tender.id }}/edit" style="padding: 0.5rem 1rem; background: #ffc107; color: black; text-decoration: none; border-radius: 4px; margin-right: 0.5rem;">✏️ Редактировать</a>
-    <a href="/tenders" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">← К списку</a>
+    <a href="/tenders" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; margin-right: 0.5rem;">← К списку</a>
+    <form method="post" action="/tenders/{{ tender.id }}/delete" style="display: inline;" onsubmit="return confirm('Удалить тендер безвозвратно? Все отклики по нему будут удалены.');">
+        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">🗑 Удалить</button>
+    </form>
 </div>
 
 <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
@@ -54,6 +57,9 @@
                 <button type="submit" style="padding: 0.25rem 0.5rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em; margin-left: 0.25rem;">❌ Отклонить</button>
             </form>
             {% endif %}
+            <form method="post" action="/applications/{{ a.id }}/delete" style="display: inline-block; margin-left: 0.25rem;" onsubmit="return confirm('Удалить отклик?');">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #6c757d; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85em;">🗑</button>
+            </form>
         </td>
     </tr>
     {% endfor %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Тикеты поддержки — TenderBot Admin{% endblock %}
+{% block content %}
+<h1>💬 Тикеты поддержки</h1>
+<script>
+(function(){
+    var lastNew = -1;
+    function checkNew() {
+        fetch('/support/api/new_count', { credentials: 'same-origin' })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                var n = d.count || 0;
+                if (n > 0) document.title = '[' + n + '] Тикеты поддержки — TenderBot Admin';
+                else document.title = 'Тикеты поддержки — TenderBot Admin';
+                lastNew = n;
+            });
+    }
+    setInterval(checkNew, 15000);
+    setTimeout(checkNew, 2000);
+})();
+</script>
+<p>
+    <a href="/support">Все</a>
+    {% for val, label in statuses %}
+    | <a href="/support?status={{ val }}" {% if status_filter == val %}style="font-weight: bold;"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</p>
+<table>
+    <tr><th>ID</th><th>Пользователь</th><th>TG ID</th><th>Статус</th><th>Последнее сообщение</th><th>Дата</th><th>Действия</th></tr>
+    {% for t in tickets %}
+    <tr style="{% if t.status == 'new' %}background: #ffebee;{% elif t.status == 'in_progress' %}background: #fff8e1;{% endif %}">
+        <td>{{ t.id }}</td>
+        <td><a href="/support/{{ t.id }}">{{ t.user.full_name }}</a></td>
+        <td>{{ t.user.tg_id }}</td>
+        <td>
+            {% if t.status == 'new' %}<span style="color: #c62828;">🆕 Новый</span>{% endif %}
+            {% if t.status == 'in_progress' %}<span style="color: #f9a825;">⏳ В процессе</span>{% endif %}
+            {% if t.status == 'closed' %}<span style="color: #78909c;">📁 Закрыт</span>{% endif %}
+        </td>
+        <td>
+            {% if last_msgs.get(t.id) %}
+            {{ (last_msgs[t.id][0] or '')[:60] }}{% if (last_msgs[t.id][0] or '')|length > 60 %}...{% endif %}
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            {% if last_msgs.get(t.id) and last_msgs[t.id][1] %}
+            {{ last_msgs[t.id][1].strftime('%d.%m.%Y %H:%M') }}
+            {% else %}—{% endif %}
+        </td>
+        <td>
+            <a href="/support/{{ t.id }}" style="margin-right: 0.5rem;">Открыть</a>
+            <form method="post" action="/support/{{ t.id }}/delete" style="display: inline;" onsubmit="return confirm('Удалить тикет и все сообщения?');">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #6c757d; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85em;">🗑</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% if not tickets %}
+<p>Тикетов пока нет.</p>
+{% endif %}
+{% endblock %}

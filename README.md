@@ -103,9 +103,8 @@ tenderbot/
 - `/start` — Главное меню
 - `/register` — Регистрация
 - `/profile` — Профиль
-- `/my_applications` — Мои отклики (для исполнителей)
-- `/my_tenders` — Мои тендеры (для заказчиков)
-- `/add_tender` — Создать тендер
+- `/my_applications` — Мои отклики
+- `/add_tender` — Подсказка по созданию тендера (веб-админка)
 - `/help` — Справка
 
 ## Миграции БД
@@ -128,17 +127,27 @@ alembic upgrade head
    pip install -r requirements.txt
    ```
 
-2. **Файл `.env`** в корне проекта (скопировать из `.env.example` и заполнить):
+2. **Файл `.env` на сервере** — в репозиторий не попадает (в `.gitignore`). На VPS его нужно создать вручную одним из способов:
+
+   **Вариант А — на сервере из шаблона `.envv` (уже есть после `git pull`):**
+   ```bash
+   cd /path/to/tenderbot
+   cp .envv .env
+   nano .env   # подставьте BOT_TOKEN, ADMIN_ID, DATABASE_URL и т.д.
+   ```
+
+   **Вариант Б — с вашего ПК по SCP (файл `.env` уже заполнен локально):**
+   ```bash
+   scp .env user@your-vps-ip:/path/to/tenderbot/.env
+   ```
+
+   В `.env` должны быть как минимум:
    ```env
    BOT_TOKEN=токен_от_BotFather
    ADMIN_ID=ваш_telegram_id
    DATABASE_URL=postgresql+asyncpg://user:password@host:5432/tenderbot
-   WEB_SECRET_KEY=длинная_случайная_строка
-   ADMIN_PASSWORD=надёжный_пароль
-   WEB_HOST=0.0.0.0
-   WEB_PORT=8000
    ```
-   Для SQLite: `DATABASE_URL=sqlite+aiosqlite:///./data.db`
+   Для SQLite: `DATABASE_URL=sqlite+aiosqlite:///./data.db`. Опционально: `WEB_SECRET_KEY`, `ADMIN_PASSWORD`, `WEB_HOST`, `WEB_PORT`.
 
 3. **Миграции** (выполняются при первом запуске бота, или вручную):
    ```bash
@@ -158,7 +167,7 @@ alembic upgrade head
    uvicorn web.main:app --host 0.0.0.0 --port 8000 --workers 2
    ```
 
-Убедитесь, что на сервере открыт порт из `WEB_PORT` (по умолчанию 8000) и что PostgreSQL доступен по `DATABASE_URL`. Все команды выполняйте из **корня проекта** (где лежат `run.py` и `.env`).
+Убедитесь, что на сервере открыт порт из `WEB_PORT` (по умолчанию 8000) и что PostgreSQL доступен по `DATABASE_URL`. Все команды выполняйте из **корня проекта** (где лежат `run.py`, `.envv` и созданный вами `.env`). Файл `.env` существует только на сервере (и локально) и в Git не коммитится.
 
 ---
 

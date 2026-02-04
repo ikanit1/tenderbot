@@ -180,6 +180,22 @@ async def tender_change_status(
     return RedirectResponse(url=f"/tenders/{tender_id}", status_code=302)
 
 
+@router.post("/{tender_id}/delete", response_class=RedirectResponse)
+async def tender_delete(
+    request: Request,
+    tender_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить тендер (каскадно удалятся отклики)."""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    tender = db.execute(select(Tender).where(Tender.id == tender_id)).scalar_one_or_none()
+    if tender:
+        db.delete(tender)
+        db.commit()
+    return RedirectResponse(url="/tenders", status_code=302)
+
+
 @router.get("/{tender_id}", response_class=HTMLResponse)
 async def tender_detail(
     request: Request,

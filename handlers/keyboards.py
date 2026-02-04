@@ -10,26 +10,38 @@ from config import settings
 from database.models import UserRole, UserStatus, TenderStatus
 
 
-def get_main_menu_kb(user_role: str | None = None, is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """Главное меню для исполнителей."""
+def get_main_menu_kb(
+    user_role: str | None = None,
+    is_admin: bool = False,
+    is_pending_moderation: bool = False,
+) -> ReplyKeyboardMarkup:
+    """Главное меню. При is_pending_moderation — только Помощь (доступ после модерации)."""
     builder = ReplyKeyboardBuilder()
     
-    if user_role == UserRole.EXECUTOR.value:
+    if is_pending_moderation:
+        if is_admin:
+            builder.button(text="⚙️ Админ-панель")
+        builder.button(text="ℹ️ Помощь")
+        builder.adjust(2, 1)
+    elif user_role == UserRole.EXECUTOR.value:
         builder.button(text="📋 Мои отклики")
-        builder.button(text="👤 Профиль")
-        builder.button(text="🔍 Найти тендеры")
+        builder.button(text="👤 Мой профиль")
+        builder.button(text="🔍 Искать заказы")
+        builder.button(text="💬 Поддержка")
+        if is_admin:
+            builder.button(text="⚙️ Админ-панель")
+        builder.button(text="ℹ️ Помощь")
+        builder.adjust(2, 2, 1)
     else:
-        builder.button(text="📝 Регистрация")
-    
-    if is_admin:
-        builder.button(text="⚙️ Админ-панель")
-    
-    builder.button(text="ℹ️ Помощь")
-    builder.adjust(2, 1)
+        builder.button(text="📝 Пройти регистрацию")
+        if is_admin:
+            builder.button(text="⚙️ Админ-панель")
+        builder.button(text="ℹ️ Помощь")
+        builder.adjust(2, 1)
     return builder.as_markup(
         resize_keyboard=True,
-        is_persistent=True,  # Меню всегда видно
-        one_time_keyboard=False,  # Меню не скрывается после использования
+        is_persistent=True,
+        one_time_keyboard=False,
     )
 
 
@@ -63,7 +75,7 @@ def get_skills_kb(selected_skills: list[str] | None = None) -> InlineKeyboardMar
         )
     
     builder.button(
-        text="✅ Готово",
+        text="✅ Готово, дальше",
         callback_data="skill:done"
     )
     builder.adjust(2)
@@ -135,12 +147,12 @@ def get_tender_list_kb(tender_id: int, can_apply: bool = True) -> InlineKeyboard
     
     if can_apply:
         builder.button(
-            text="📩 Откликнуться",
+            text="📩 Откликнуться на заказ",
             callback_data=f"apply:{tender_id}"
         )
     
     builder.button(
-        text="👁️ Подробнее",
+        text="👁️ Подробнее о заказе",
         callback_data=f"tender_detail:{tender_id}"
     )
     builder.adjust(1)
@@ -203,18 +215,25 @@ def get_application_actions_kb(application_id: int, tender_id: int) -> InlineKey
 def get_profile_edit_kb() -> InlineKeyboardMarkup:
     """Клавиатура редактирования профиля."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ Редактировать", callback_data="edit_profile")
+    builder.button(text="✏️ Изменить профиль", callback_data="edit_profile")
     builder.button(text="📋 Мои отклики", callback_data="my_applications")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_support_chat_kb() -> InlineKeyboardMarkup:
+    """Клавиатура в чате поддержки: завершить чат."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔚 Закончить обращение", callback_data="support_end_chat")
     return builder.as_markup()
 
 
 def get_help_kb() -> InlineKeyboardMarkup:
     """Клавиатура помощи."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="📖 Команды", callback_data="help_commands")
-    builder.button(text="❓ FAQ", callback_data="help_faq")
-    builder.button(text="📞 Поддержка", callback_data="help_support")
+    builder.button(text="📖 Список команд", callback_data="help_commands")
+    builder.button(text="❓ Частые вопросы", callback_data="help_faq")
+    builder.button(text="💬 В поддержку", callback_data="help_support")
     builder.adjust(1)
     return builder.as_markup()
 

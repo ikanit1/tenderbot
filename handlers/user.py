@@ -1,6 +1,7 @@
-# handlers/user.py — регистрация исполнителя и заказчика (FSM)
+# handlers/user.py — регистрация исполнителя (FSM)
 from datetime import datetime
 
+import phonenumbers
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -22,6 +23,7 @@ from handlers.keyboards import (
     get_help_kb,
 )
 from utils.chat_utils import answer_with_cleanup, clear_user_messages
+from utils.ui_manager import answer_ui
 
 router = Router()
 
@@ -60,8 +62,8 @@ async def cmd_start(
         await answer_with_cleanup(
             message,
             "⏳ <b>Ваша заявка на модерации</b>\n\n"
-            "Ожидайте решения администратора. Мы уведомим вас, как только ваша заявка будет рассмотрена.",
-            reply_markup=get_main_menu_kb(user.role, is_admin),
+            "Ожидайте решения администратора. Доступ к функциям бота будет после одобрения.",
+            reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=True),
         )
         return
     
@@ -82,12 +84,12 @@ async def cmd_start(
     await answer_with_cleanup(
         message,
         welcome_back,
-        reply_markup=get_main_menu_kb(user.role, is_admin),
+        reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False),
     )
 
 
 @router.message(Command("register"))
-@router.message(F.text == "📝 Регистрация")
+@router.message(F.text == "📝 Пройти регистрацию")
 async def cmd_register(
     message: Message,
     session: AsyncSession,
@@ -102,11 +104,13 @@ async def cmd_register(
     result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
     existing = result.scalar_one_or_none()
     if existing:
+        is_admin = message.from_user.id == settings.ADMIN_ID
         if existing.status == UserStatus.PENDING_MODERATION.value:
             await answer_with_cleanup(
                 message,
                 "⏳ <b>Вы уже подали заявку</b>\n\n"
-                "Ожидайте модерации. Мы уведомим вас о результате.",
+                "Ожидайте модерации. Доступ к боту будет после одобрения.",
+                reply_markup=get_main_menu_kb(existing.role, is_admin, is_pending_moderation=True),
             )
             return
         if existing.status == UserStatus.ACTIVE.value:
@@ -114,15 +118,17 @@ async def cmd_register(
                 message,
                 "✅ <b>Вы уже зарегистрированы</b>\n\n"
                 "Используйте меню для навигации.",
-                reply_markup=get_main_menu_kb(existing.role, message.from_user.id == settings.ADMIN_ID),
+                reply_markup=get_main_menu_kb(existing.role, is_admin, is_pending_moderation=False),
             )
             return
     
-    # Сразу начинаем регистрацию исполнителя
+    # Сразу начинаем регистрацию исполнителя (answer_ui сохраняет last_msg_id для редактирования на следующих шагах)
     await state.set_state(RegistrationStates.full_name)
-    await message.answer(
+    await answer_ui(
+        message,
         "👷 <b>Регистрация исполнителя</b>\n\n"
-        "Введите ваше ФИО (полностью):"
+        "Введите ваше ФИО (полностью):",
+        state=state,
     )
 
 
@@ -136,7 +142,7 @@ async def cmd_register(
 async def step_full_name(message: Message, state: FSMContext) -> None:
     await state.update_data(full_name=message.text.strip())
     await state.set_state(RegistrationStates.birth_date)
-    await message.answer("Введите дату рождения в формате ДД.ММ.ГГГГ (например 15.05.1990):")
+    await answer_ui(message, "Введите дату рождения в формате ДД.ММ.ГГГГ (например 15.05.1990):", state=state)
 
 
 @router.message(RegistrationStates.birth_date, F.text)
@@ -145,28 +151,49 @@ async def step_birth_date(message: Message, state: FSMContext) -> None:
     try:
         dt = datetime.strptime(text, "%d.%m.%Y").date()
     except ValueError:
-        await message.answer("Неверный формат. Введите дату как ДД.ММ.ГГГГ:")
+        await answer_ui(message, "Неверный формат. Введите дату как ДД.ММ.ГГГГ:", state=state)
         return
     await state.update_data(birth_date=dt)
     await state.set_state(RegistrationStates.city)
-    await message.answer("Введите город:")
+    await answer_ui(message, "Введите город:", state=state)
 
 
 @router.message(RegistrationStates.city, F.text)
 async def step_city(message: Message, state: FSMContext) -> None:
     await state.update_data(city=message.text.strip())
     await state.set_state(RegistrationStates.phone)
-    await message.answer("Введите номер телефона (например +7 999 123-45-67):")
+    await answer_ui(message, "Введите номер телефона (например +7 999 123-45-67):", state=state)
+
+
+def _validate_phone(phone: str) -> tuple[bool, str | None]:
+    """Проверка формата номера телефона. Возвращает (ok, normalized_or_error_message)."""
+    try:
+        parsed = phonenumbers.parse(phone.strip(), "RU")
+        if not phonenumbers.is_valid_number(parsed):
+            return False, "Номер телефона недействителен. Введите корректный номер, например +7 999 123-45-67."
+        normalized = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+        return True, normalized
+    except phonenumbers.NumberParseException:
+        return False, "Неверный формат номера. Укажите номер с кодом страны, например +7 999 123-45-67."
+    except Exception:
+        return False, "Не удалось проверить номер. Укажите номер в формате +7 999 123-45-67."
 
 
 @router.message(RegistrationStates.phone, F.text)
 async def step_phone(message: Message, state: FSMContext) -> None:
-    await state.update_data(phone=message.text.strip())
+    phone_raw = message.text.strip()
+    ok, result = _validate_phone(phone_raw)
+    if not ok:
+        await answer_ui(message, result, state=state)
+        return
+    await state.update_data(phone=result)
     await state.set_state(RegistrationStates.skills)
-    await message.answer(
+    await answer_ui(
+        message,
         "🛠️ <b>Выбор навыков</b>\n\n"
         "Выберите ваши навыки (можно несколько). Нажмите на навык для выбора, затем нажмите <b>«✅ Готово»</b>:",
         reply_markup=get_skills_kb(),
+        state=state,
     )
 
 
@@ -182,16 +209,17 @@ async def step_skills_callback(
         if not skills:
             await callback.answer("⚠️ Выберите хотя бы один навык.", show_alert=True)
             return
-        await state.update_data(skills=skills)
+        await state.update_data(skills=skills, documents_list=[])
         await state.set_state(RegistrationStates.documents)
         skills_str = ", ".join(skills)
         await callback.message.edit_text(
             f"✅ <b>Навыки выбраны:</b> {skills_str}\n\n"
             "📎 <b>Документы</b> (необязательно)\n\n"
-            "Вы можете загрузить фото или документы для подтверждения квалификации.\n"
-            "Или нажмите «Пропустить», чтобы продолжить без документов.",
+            "Можно загрузить несколько фото или документов для подтверждения квалификации.\n"
+            "Отправьте файлы по одному, затем нажмите «Готово» или «Пропустить».\n\n"
+            "💡 <i>Файлы нужны только для модерации и не хранятся дольше недели.</i>",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="doc:skip")]
+                [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="doc:done"), InlineKeyboardButton(text="⏭️ Без документов", callback_data="doc:skip")]
             ]),
         )
         await callback.answer()
@@ -209,13 +237,36 @@ async def step_skills_callback(
     await callback.answer(f"{action}: {value}. Выбрано: {len(skills)}")
 
 
+def _documents_list_to_save(docs_list: list) -> list | None:
+    """Формат для БД: список {type, file_id, file_name?, mime_type?}."""
+    if not docs_list:
+        return None
+    return docs_list
+
+
 @router.callback_query(RegistrationStates.documents, F.data == "doc:skip")
 async def step_documents_skip(
     callback: CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
 ) -> None:
-    await state.update_data(documents=None)
+    await state.update_data(documents=None, documents_list=[])
+    await _submit_registration(callback.message, state, session, callback.from_user)
+    await callback.message.delete()
+    await callback.answer()
+
+
+@router.callback_query(RegistrationStates.documents, F.data == "doc:done")
+async def step_documents_done(
+    callback: CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    """Завершить добавление документов и отправить заявку."""
+    data = await state.get_data()
+    docs_list = data.get("documents_list") or []
+    documents = _documents_list_to_save(docs_list)
+    await state.update_data(documents=documents, documents_list=[])
     await _submit_registration(callback.message, state, session, callback.from_user)
     await callback.message.delete()
     await callback.answer()
@@ -223,35 +274,101 @@ async def step_documents_skip(
 
 @router.message(RegistrationStates.documents, F.text)
 async def step_documents_text(message: Message) -> None:
-    """Если пользователь написал текст — напоминаем про файл или Пропустить."""
+    """Если пользователь написал текст — напоминаем про файл или кнопки."""
     await message.answer(
-        "Отправьте фото/документ или нажмите «Пропустить» в сообщении выше."
+        "Отправьте фото/документ или нажмите «Готово» / «Пропустить» в сообщении выше."
     )
+
+
+def _check_document_allowed(
+    file_name: str | None,
+    mime_type: str | None,
+    file_size: int | None,
+) -> str | None:
+    """Проверка типа и размера файла. Возвращает None если ок, иначе текст ошибки."""
+    max_bytes = settings.MAX_DOCUMENT_SIZE_MB * 1024 * 1024
+    if file_size is not None and file_size > max_bytes:
+        return (
+            f"Файл слишком большой. Максимум: {settings.MAX_DOCUMENT_SIZE_MB} МБ. "
+            f"Ваш файл: {file_size / (1024*1024):.1f} МБ."
+        )
+    if file_name:
+        ext = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        if ext and ext not in settings.ALLOWED_DOCUMENT_EXTENSIONS:
+            return (
+                f"Недопустимый тип файла. Разрешены: "
+                f"{', '.join(settings.ALLOWED_DOCUMENT_EXTENSIONS)}"
+            )
+    if mime_type and settings.ALLOWED_DOCUMENT_MIME_PREFIXES:
+        if not any(mime_type.lower().startswith(p.lower()) for p in settings.ALLOWED_DOCUMENT_MIME_PREFIXES):
+            return (
+                "Недопустимый тип файла. Разрешены: фото (JPEG, PNG) и PDF."
+            )
+    return None
+
+
+def _get_documents_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Отправить заявку", callback_data="doc:done"), InlineKeyboardButton(text="⏭️ Без документов", callback_data="doc:skip")]
+    ])
 
 
 @router.message(RegistrationStates.documents, F.photo)
 async def step_documents_photo(
     message: Message,
     state: FSMContext,
-    session: AsyncSession,
 ) -> None:
-    # Сохраняем только file_id для простоты (в БД — JSONB)
     photo = message.photo[-1]
-    await state.update_data(documents={"photo_file_id": photo.file_id})
-    await _submit_registration(message, state, session, message.from_user)
+    err = _check_document_allowed(
+        file_name="photo.jpg",
+        mime_type="image/jpeg",
+        file_size=getattr(photo, "file_size", None),
+    )
+    if err:
+        await message.answer(f"❌ {err}")
+        return
+    data = await state.get_data()
+    docs_list = list(data.get("documents_list") or [])
+    docs_list.append({
+        "type": "photo",
+        "file_id": photo.file_id,
+        "file_name": None,
+        "mime_type": "image/jpeg",
+    })
+    await state.update_data(documents_list=docs_list)
+    await message.answer(
+        f"✅ Добавлено фото (всего файлов: {len(docs_list)}). Отправьте ещё или нажмите «Готово».",
+        reply_markup=_get_documents_kb(),
+    )
 
 
 @router.message(RegistrationStates.documents, F.document)
 async def step_documents_doc(
     message: Message,
     state: FSMContext,
-    session: AsyncSession,
 ) -> None:
     doc = message.document
-    await state.update_data(
-        documents={"document_file_id": doc.file_id, "file_name": doc.file_name}
+    err = _check_document_allowed(
+        file_name=doc.file_name,
+        mime_type=getattr(doc, "mime_type", None),
+        file_size=getattr(doc, "file_size", None),
     )
-    await _submit_registration(message, state, session, message.from_user)
+    if err:
+        await message.answer(f"❌ {err}")
+        return
+    data = await state.get_data()
+    docs_list = list(data.get("documents_list") or [])
+    docs_list.append({
+        "type": "document",
+        "file_id": doc.file_id,
+        "file_name": doc.file_name,
+        "mime_type": getattr(doc, "mime_type", None),
+    })
+    await state.update_data(documents_list=docs_list)
+    await message.answer(
+        f"✅ Добавлен документ (всего файлов: {len(docs_list)}). Отправьте ещё или нажмите «Готово».",
+        reply_markup=_get_documents_kb(),
+    )
 
 
 async def _submit_registration(
@@ -306,30 +423,49 @@ async def _submit_registration(
     await answer_with_cleanup(
         message,
         "✅ <b>Заявка отправлена на модерацию</b>\n\n"
-        "Ожидайте решения администратора. Мы уведомим вас о результате.",
-        reply_markup=get_main_menu_kb(None, message.from_user.id == settings.ADMIN_ID),
+        "Ожидайте решения администратора. Доступ к функциям бота будет после одобрения.",
+        reply_markup=get_main_menu_kb(user.role, message.from_user.id == settings.ADMIN_ID, is_pending_moderation=True),
     )
+
+
+async def _require_active_user(
+    message: Message,
+    user: User | None,
+    is_admin: bool,
+) -> bool:
+    """Если пользователь на модерации — отвечает «Доступ после модерации» и возвращает True (прервать)."""
+    if user and user.status == UserStatus.PENDING_MODERATION.value:
+        await answer_with_cleanup(
+            message,
+            "⏳ <b>Доступ после модерации</b>\n\n"
+            "Функции бота будут доступны после одобрения вашей заявки администратором.",
+            reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=True),
+        )
+        return True
+    return False
 
 
 # ——— Профиль и мои отклики (исполнитель) ———
 @router.message(Command("profile"))
-@router.message(F.text == "👤 Профиль")
+@router.message(F.text == "👤 Мой профиль")
 async def cmd_profile(message: Message, session: AsyncSession, state: FSMContext) -> None:
     """Просмотр своего профиля."""
-    # Отменяем FSM состояние, если оно активно
     current_state = await state.get_state()
     if current_state:
         await state.clear()
     
     result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
     user = result.scalar_one_or_none()
+    is_admin = message.from_user.id == settings.ADMIN_ID
     if not user:
         await answer_with_cleanup(
             message,
             "❌ <b>Профиль не найден</b>\n\n"
             "Сначала пройдите регистрацию.",
-            reply_markup=get_main_menu_kb(None, message.from_user.id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(None, is_admin),
         )
+        return
+    if await _require_active_user(message, user, is_admin):
         return
     
     skills_str = ", ".join(user.skills) if user.skills else "—"
@@ -362,7 +498,11 @@ async def cmd_profile(message: Message, session: AsyncSession, state: FSMContext
     if user.birth_date:
         text += f"\n🎂 <b>Дата рождения:</b> {user.birth_date.strftime('%d.%m.%Y')}"
     
-    await answer_with_cleanup(message, text, reply_markup=get_profile_edit_kb())
+    await answer_with_cleanup(
+        message,
+        text,
+        reply_markup=get_profile_edit_kb(),
+    )
 
 
 @router.message(Command("edit_profile"))
@@ -387,13 +527,16 @@ async def cmd_edit_profile(
     
     result = await session.execute(select(User).where(User.tg_id == tg_id))
     user = result.scalar_one_or_none()
+    is_admin = tg_id == settings.ADMIN_ID
     if not user:
         await answer_with_cleanup(
             message,
             "❌ <b>Профиль не найден</b>\n\n"
             "Сначала пройдите регистрацию.",
-            reply_markup=get_main_menu_kb(None, tg_id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(None, is_admin),
         )
+        return
+    if await _require_active_user(message, user, is_admin):
         return
     await state.set_state(ProfileEditStates.city)
     await message.answer(
@@ -411,7 +554,11 @@ async def edit_city(message: Message, state: FSMContext) -> None:
 
 @router.message(ProfileEditStates.phone, F.text)
 async def edit_phone(message: Message, state: FSMContext) -> None:
-    await state.update_data(phone=message.text.strip())
+    ok, result = _validate_phone(message.text)
+    if not ok:
+        await message.answer(result)
+        return
+    await state.update_data(phone=result)
     await state.set_state(ProfileEditStates.skills)
     await message.answer(
         "🛠️ <b>Выбор навыков</b>\n\n"
@@ -458,7 +605,7 @@ async def edit_skills_callback(callback: CallbackQuery, state: FSMContext, sessi
         await answer_with_cleanup(
             callback.message,
             "✅ <b>Профиль успешно обновлён!</b>",
-            reply_markup=get_main_menu_kb(user.role, callback.from_user.id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(user.role, callback.from_user.id == settings.ADMIN_ID, is_pending_moderation=False),
         )
         return
     # Переключаем навык
@@ -501,13 +648,16 @@ async def cmd_my_applications(
     
     result = await session.execute(select(User).where(User.tg_id == tg_id))
     user = result.scalar_one_or_none()
+    is_admin = tg_id == settings.ADMIN_ID
     if not user:
         await answer_with_cleanup(
             message,
             "❌ <b>Профиль не найден</b>\n\n"
             "Сначала пройдите регистрацию.",
-            reply_markup=get_main_menu_kb(None, tg_id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(None, is_admin),
         )
+        return
+    if await _require_active_user(message, user, is_admin):
         return
     
     result = await session.execute(
@@ -522,8 +672,8 @@ async def cmd_my_applications(
             message,
             "📋 <b>Мои отклики</b>\n\n"
             "У вас пока нет откликов на тендеры.\n\n"
-            "💡 Используйте кнопку <b>«🔍 Найти тендеры»</b> для поиска подходящих проектов.",
-            reply_markup=get_main_menu_kb(user.role, message.from_user.id == settings.ADMIN_ID),
+            "💡 Используйте кнопку <b>«🔍 Искать заказы»</b> для поиска подходящих проектов.",
+            reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False),
         )
         return
     
@@ -550,10 +700,10 @@ async def cmd_my_applications(
     if len(apps) > 10:
         text += f"\n\n... показаны последние 10 из {len(apps)}"
     
-    await answer_with_cleanup(message, text, reply_markup=get_main_menu_kb(user.role, message.from_user.id == settings.ADMIN_ID))
+    await answer_with_cleanup(message, text, reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False))
 
 
-@router.message(F.text == "🔍 Найти тендеры")
+@router.message(F.text == "🔍 Искать заказы")
 async def cmd_find_tenders(message: Message, session: AsyncSession, state: FSMContext) -> None:
     """Поиск доступных тендеров для исполнителя."""
     # Отменяем FSM состояние, если оно активно
@@ -563,13 +713,16 @@ async def cmd_find_tenders(message: Message, session: AsyncSession, state: FSMCo
     
     result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
     user = result.scalar_one_or_none()
+    is_admin = message.from_user.id == settings.ADMIN_ID
     if not user:
         await answer_with_cleanup(
             message,
             "❌ <b>Профиль не найден</b>\n\n"
             "Сначала пройдите регистрацию.",
-            reply_markup=get_main_menu_kb(None, message.from_user.id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(None, is_admin),
         )
+        return
+    if await _require_active_user(message, user, is_admin):
         return
     
     # Показываем открытые тендеры, подходящие по городу и навыкам
@@ -591,7 +744,7 @@ async def cmd_find_tenders(message: Message, session: AsyncSession, state: FSMCo
             "🔍 <b>Поиск тендеров</b>\n\n"
             "К сожалению, в вашем городе пока нет открытых тендеров.\n\n"
             "💡 Мы уведомим вас, когда появятся подходящие проекты!",
-            reply_markup=get_main_menu_kb(user.role, message.from_user.id == settings.ADMIN_ID),
+            reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False),
         )
         return
     
@@ -647,11 +800,11 @@ async def cmd_help(
         text = (
             "❓ <b>Часто задаваемые вопросы</b>\n\n"
             "<b>Как зарегистрироваться?</b>\n"
-            "Используйте команду /register или кнопку «📝 Регистрация» в меню.\n\n"
+            "Используйте команду /register или кнопку «📝 Пройти регистрацию» в меню.\n\n"
             "<b>Сколько времени занимает модерация?</b>\n"
             "Обычно модерация занимает от нескольких минут до 24 часов.\n\n"
             "<b>Как создать тендер?</b>\n"
-            "После регистрации как заказчик используйте /add_tender.\n\n"
+            "Создание тендеров — через веб-админку (доступно администратору).\n\n"
             "<b>Как откликнуться на тендер?</b>\n"
             "Используйте кнопку «📩 Откликнуться» в описании тендера."
         )

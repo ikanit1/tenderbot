@@ -94,10 +94,11 @@ async def cmd_admin_menu(message: Message, session: AsyncSession, state: FSMCont
         )
     elif message.text == "🏠 Главное меню":
         user_role = user.role if user else None
+        pending = user and user.status == UserStatus.PENDING_MODERATION.value
         await answer_with_cleanup(
             message,
             "🏠 <b>Главное меню</b>",
-            reply_markup=get_main_menu_kb(user_role, is_admin(message.from_user.id)),
+            reply_markup=get_main_menu_kb(user_role, is_admin(message.from_user.id), is_pending_moderation=pending),
         )
 
 
@@ -126,7 +127,7 @@ async def cmd_moderation(message: Message, session: AsyncSession, state: FSMCont
     
     from handlers.keyboards import get_moderation_kb
     for user in users:
-        role_str = {"executor": "Исполнитель", "customer": "Заказчик", "both": "Оба"}.get(user.role, user.role)
+        role_str = "Исполнитель" if user.role == "executor" else (user.role or "—")
         skills_str = ", ".join(user.skills) if user.skills else "—"
         text = (
             f"🆕 <b>Новая заявка</b>\n\n"
@@ -382,6 +383,7 @@ async def publish_tender(
             return
     tender.status = TenderStatus.OPEN.value
     await session.flush()
+    # Уведомляем только исполнителей: тот же город и навыки совпадают с категорией тендера
     result = await session.execute(
         select(User).where(
             User.status == UserStatus.ACTIVE.value,
@@ -391,7 +393,9 @@ async def publish_tender(
     all_city = result.scalars().all()
     users = [
         u for u in all_city
-        if u.role in ("executor", "both") and (u.skills or []) and tender.category in (u.skills or [])
+        if u.role in ("executor", "both")
+        and (u.skills or [])
+        and tender.category in (u.skills or [])
     ]
     tender_text = (
         f"📋 Тендер: {tender.title}\n"
@@ -459,7 +463,7 @@ async def admin_select_executor(
     )
     await callback.bot.send_message(
         app.user.tg_id,
-        f"Вас выбрали исполнителем по тендеру «{tender.title}». Свяжитесь с заказчиком для уточнения деталей."
+        f"Вас выбрали исполнителем по тендеру «{tender.title}». Администраторы свяжутся с вами для уточнения деталей."
     )
     await callback.answer("Исполнитель выбран.")
 
@@ -487,7 +491,7 @@ async def close_tender_callback(
     await callback.message.edit_text(
         (callback.message.text or "") + "\n\n✅ Тендер закрыт."
     )
-    # Предложить заказчику оценить исполнителя (если есть выбранный отклик)
+    # Предложить создателю тендера оценить исполнителя (если есть выбранный отклик)
     result = await session.execute(
         select(TenderApplication)
         .options(selectinload(TenderApplication.user))
@@ -560,7 +564,7 @@ async def rate_tender_start(
     )
     user = result.scalar_one_or_none()
     if not user or user.id != tender.created_by_user_id:
-        await callback.answer("Оценить может только заказчик по этому тендеру.", show_alert=True)
+        await callback.answer("Оценить может только создатель тендера.", show_alert=True)
         return
     result = await session.execute(
         select(TenderApplication)

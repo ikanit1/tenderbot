@@ -14,6 +14,22 @@ router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
+@router.post("/{review_id}/delete", response_class=RedirectResponse)
+async def review_delete(
+    request: Request,
+    review_id: int,
+    db: Session = Depends(get_db),
+):
+    """Удалить отзыв (например некорректный)."""
+    if get_session_user(request) is None:
+        return RedirectResponse(url="/login", status_code=302)
+    review = db.execute(select(Review).where(Review.id == review_id)).scalar_one_or_none()
+    if review:
+        db.delete(review)
+        db.commit()
+    return RedirectResponse(url="/reviews", status_code=302)
+
+
 @router.get("", response_class=HTMLResponse)
 async def reviews_list(
     request: Request,

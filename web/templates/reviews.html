@@ -3,17 +3,22 @@
 {% block content %}
 <h1>Отзывы и рейтинги</h1>
 <table>
-    <tr><th>ID</th><th>Тендер</th><th>Кому (to_user_id)</th><th>Оценка</th><th>Комментарий</th><th>Дата</th></tr>
+    <tr><th>ID</th><th>Тендер</th><th>Кому</th><th>Оценка</th><th>Комментарий</th><th>Дата</th><th>Действия</th></tr>
     {% for r in reviews %}
     <tr>
         <td>{{ r.id }}</td>
-        <td>{{ r.tender_id }}</td>
-        <td>{{ r.to_user_id }}</td>
+        <td><a href="/tenders/{{ r.tender_id }}">#{{ r.tender_id }}</a></td>
+        <td><a href="/users/{{ r.to_user_id }}">Пользователь {{ r.to_user_id }}</a></td>
         <td>{{ r.rating }}/5</td>
         <td>{{ r.comment or "—" }}</td>
         <td>{{ r.created_at.strftime("%d.%m.%Y %H:%M") if r.created_at else "—" }}</td>
+        <td>
+            <form method="post" action="/reviews/{{ r.id }}/delete" style="display: inline;" onsubmit="return confirm('Удалить отзыв?');">
+                <button type="submit" style="padding: 0.25rem 0.5rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85em;">🗑</button>
+            </form>
+        </td>
     </tr>
     {% endfor %}
 </table>
-<p>Средние рейтинги по пользователям (to_user_id): в карточке пользователя.</p>
+<p>Средние рейтинги по пользователям отображаются в карточке пользователя.</p>
 {% endblock %}

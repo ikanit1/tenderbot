@@ -28,6 +28,7 @@ from aiogram.utils.token import TokenValidationError
 from handlers import router
 from middlewares.db import DbSessionMiddleware
 from middlewares.fsm_cancel import FSMCancelMiddleware
+from utils.ui_manager import FSMDeleteUserMessageMiddleware
 
 # Логирование
 logging.basicConfig(
@@ -70,6 +71,7 @@ async def main() -> None:
     dp.message.middleware(FSMCancelMiddleware())
     dp.callback_query.middleware(FSMCancelMiddleware())
     dp.message.middleware(DbSessionMiddleware())
+    dp.message.middleware(FSMDeleteUserMessageMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware())
     dp.include_router(router)
 
