@@ -1,22 +1,25 @@
 # web/routes/users.py
+import logging
 import urllib.request
 import json
 
 from fastapi import APIRouter, Request, Depends, Query, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from typing import Annotated
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from pathlib import Path
 
 from config import settings
 from web.database import get_db
 from web.auth import get_session_user
+from web.templates_loader import templates
 from database.models import User, Review, UserStatus, UserRole
+from utils.validators import validate_string_length
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 def normalize_documents(documents) -> list:
@@ -161,20 +164,36 @@ async def user_update(
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if not user:
         return RedirectResponse(url="/users", status_code=302)
-    if full_name is not None:
-        user.full_name = full_name.strip()
-    if city is not None:
-        user.city = city.strip()
-    if phone is not None:
-        user.phone = phone.strip()
-    if role and role in [r.value for r in UserRole]:
-        user.role = role
-    if status and status in [s.value for s in UserStatus]:
-        user.status = status
-    if skills is not None:
-        user.skills = [s for s in skills if s] or None
-    db.commit()
-    return RedirectResponse(url=f"/users/{user_id}", status_code=302)
+    
+    try:
+        if full_name is not None:
+            is_valid, error_msg = validate_string_length(full_name.strip(), max_length=256, field_name="ФИО")
+            if not is_valid:
+                return RedirectResponse(url=f"/users/{user_id}?error={error_msg}", status_code=302)
+            user.full_name = full_name.strip()
+        if city is not None:
+            is_valid, error_msg = validate_string_length(city.strip(), max_length=128, field_name="Город")
+            if not is_valid:
+                return RedirectResponse(url=f"/users/{user_id}?error={error_msg}", status_code=302)
+            user.city = city.strip()
+        if phone is not None:
+            is_valid, error_msg = validate_string_length(phone.strip(), max_length=64, field_name="Телефон")
+            if not is_valid:
+                return RedirectResponse(url=f"/users/{user_id}?error={error_msg}", status_code=302)
+            user.phone = phone.strip()
+        if role and role in [r.value for r in UserRole]:
+            user.role = role
+        if status and status in [s.value for s in UserStatus]:
+            user.status = status
+        if skills is not None:
+            user.skills = [s for s in skills if s] or None
+        db.commit()
+        logger.info(f"User {user_id} updated via web interface")
+        return RedirectResponse(url=f"/users/{user_id}", status_code=302)
+    except IntegrityError as e:
+        db.rollback()
+        logger.error(f"Database error updating user {user_id}: {e}")
+        return RedirectResponse(url=f"/users/{user_id}?error=Ошибка сохранения изменений", status_code=302)
 
 
 @router.post("/{user_id}/delete", response_class=RedirectResponse)
@@ -188,8 +207,15 @@ async def user_delete(
         return RedirectResponse(url="/login", status_code=302)
     user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
     if user:
-        db.delete(user)
-        db.commit()
+        try:
+            db.delete(user)
+            db.commit()
+            logger.info(f"User {user_id} deleted via web interface")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error deleting user {user_id}: {e}")
+    else:
+        logger.warning(f"Attempt to delete non-existent user {user_id}")
     return RedirectResponse(url="/users", status_code=302)
 
 

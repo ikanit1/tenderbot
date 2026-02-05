@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1b26">
+  <title>TenderBot</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="root">
+    <div id="loader">
+      <div class="loader-spinner"></div>
+      <p>Загрузка...</p>
+    </div>
+    <div id="app" class="hidden">
+      <header class="header">
+        <button type="button" class="btn-back hidden" id="btnBack" aria-label="Назад"></button>
+        <h1 class="header-title" id="headerTitle">TenderBot</h1>
+        <div class="header-placeholder"></div>
+      </header>
+      <main class="main" id="main">
+        <!-- Экраны рендерятся через JS -->
+      </main>
+      <nav class="tabbar" id="tabbar">
+        <button type="button" class="tabbar-item active" data-screen="home" aria-label="Главная">
+          <span class="tabbar-icon">🏠</span>
+          <span class="tabbar-label">Главная</span>
+        </button>
+        <button type="button" class="tabbar-item" data-screen="tenders" aria-label="Заказы">
+          <span class="tabbar-icon">📋</span>
+          <span class="tabbar-label">Заказы</span>
+        </button>
+        <button type="button" class="tabbar-item" data-screen="applications" aria-label="Мои отклики">
+          <span class="tabbar-icon">📩</span>
+          <span class="tabbar-label">Отклики</span>
+        </button>
+        <button type="button" class="tabbar-item" data-screen="profile" aria-label="Профиль">
+          <span class="tabbar-icon">👤</span>
+          <span class="tabbar-label">Профиль</span>
+        </button>
+      </nav>
+    </div>
+    <div id="error-screen" class="hidden">
+      <div class="error-box">
+        <p id="errorText"></p>
+        <p class="error-hint">Пройдите регистрацию в боте и откройте приложение снова.</p>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

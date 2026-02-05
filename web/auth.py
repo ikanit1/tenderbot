@@ -1,11 +1,14 @@
 # web/auth.py — простая авторизация по паролю и сессия (cookie)
+import logging
 from typing import Optional
 
-from fastapi import Depends, Request, Response
+from fastapi import Depends, Request, Response, HTTPException
 from fastapi.responses import RedirectResponse
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 SECRET = settings.WEB_SECRET_KEY
 serializer = URLSafeTimedSerializer(SECRET, salt="web-admin-session")
@@ -42,3 +45,22 @@ def require_admin(request: Request) -> Optional[RedirectResponse]:
     if get_session_user(request) is None:
         return RedirectResponse(url="/login", status_code=302)
     return None
+
+
+def check_tender_ownership(request: Request, tender, db) -> bool:
+    """Проверка, что пользователь может редактировать тендер (админ или создатель)."""
+    user = get_session_user(request)
+    if not user:
+        return False
+    # В веб-интерфейсе все авторизованные пользователи - админы
+    # Но можно добавить проверку created_by_user_id если нужно
+    return True
+
+
+def check_user_edit_permission(request: Request, user_id: int, db) -> bool:
+    """Проверка, что пользователь может редактировать пользователя (только админ)."""
+    user = get_session_user(request)
+    if not user:
+        return False
+    # В веб-интерфейсе все авторизованные пользователи - админы
+    return True

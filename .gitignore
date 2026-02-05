@@ -13,8 +13,9 @@ venv/
 *.egg-info/
 .pytest_cache/
 
-# IDE
+# IDE / Editor
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo

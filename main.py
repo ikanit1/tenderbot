@@ -28,13 +28,14 @@ from aiogram.utils.token import TokenValidationError
 from handlers import router
 from middlewares.db import DbSessionMiddleware
 from middlewares.fsm_cancel import FSMCancelMiddleware
+from middlewares.menu_refresh import MenuRefreshMiddleware
+from middlewares.error_handler import ErrorHandlerMiddleware
+from middlewares.rate_limiter import RateLimiterMiddleware
 from utils.ui_manager import FSMDeleteUserMessageMiddleware
 
-# Логирование
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Логирование с улучшенным форматированием
+from utils.logging_config import setup_logging
+setup_logging(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -67,12 +68,31 @@ async def main() -> None:
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
     dp = Dispatcher()
-    # Middleware для отмены FSM при нажатии кнопок меню (должен быть ПЕРЕД DbSessionMiddleware)
+    
+    # Порядок middleware важен!
+    # 1. ErrorHandler - должен быть первым для перехвата всех ошибок
+    dp.message.middleware(ErrorHandlerMiddleware())
+    dp.callback_query.middleware(ErrorHandlerMiddleware())
+    
+    # 2. RateLimiter - ограничение частоты запросов
+    dp.message.middleware(RateLimiterMiddleware())
+    dp.callback_query.middleware(RateLimiterMiddleware())
+    
+    # 3. FSMCancel - отмена FSM при нажатии кнопок меню
     dp.message.middleware(FSMCancelMiddleware())
     dp.callback_query.middleware(FSMCancelMiddleware())
+    
+    # 4. DbSession - сессии БД (должен быть перед middleware, которые используют БД)
     dp.message.middleware(DbSessionMiddleware())
-    dp.message.middleware(FSMDeleteUserMessageMiddleware())
     dp.callback_query.middleware(DbSessionMiddleware())
+    
+    # 5. MenuRefresh - автоматическое обновление меню (использует session)
+    dp.message.middleware(MenuRefreshMiddleware())
+    dp.callback_query.middleware(MenuRefreshMiddleware())
+    
+    # 6. FSMDeleteUserMessage - удаление сообщений пользователя в FSM
+    dp.message.middleware(FSMDeleteUserMessageMiddleware())
+    
     dp.include_router(router)
 
     await dp.start_polling(bot)

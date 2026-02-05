@@ -1,14 +1,11 @@
 # web/routes/login.py
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
-from fastapi.templating import Jinja2Templates
-from pathlib import Path
-
 from config import settings
 from web.auth import get_session_user, set_session, clear_session
+from web.templates_loader import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.get("/login", response_class=HTMLResponse)

@@ -1,29 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Тендеры — TenderBot Admin{% endblock %}
+{% block header_title %}Тендеры{% endblock %}
 {% block content %}
-<h1>Тендеры</h1>
-<p>
-    <a href="/tenders">Все</a> | 
-    <a href="/tenders?status=draft">Черновики</a> | 
-    <a href="/tenders?status=open">Открытые</a> | 
-    <a href="/tenders?status=in_progress">В работе</a> | 
-    <a href="/tenders?status=closed">Закрытые</a>
-    <a href="/tenders/create" style="margin-left: 2rem; padding: 0.5rem 1rem; background: #28a745; color: white; text-decoration: none; border-radius: 4px;">➕ Создать тендер</a>
-</p>
-<table>
-    <tr><th>ID</th><th>Название</th><th>Город</th><th>Категория</th><th>Статус</th><th>Создатель</th><th>Действия</th></tr>
-    {% for t in tenders %}
-    <tr>
-        <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
-        <td>{{ t.title }}</td>
-        <td>{{ t.city }}</td>
-        <td>{{ t.category }}</td>
-        <td>{{ t.status }}</td>
-        <td>{% if t.creator %}{{ t.creator.full_name }}{% else %}—{% endif %}</td>
-        <td>
-            <a href="/tenders/{{ t.id }}/edit" style="padding: 0.25rem 0.5rem; background: #ffc107; color: black; text-decoration: none; border-radius: 3px; font-size: 0.9em;">✏️</a>
-        </td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="page-header">
+    <h2 class="page-title">Тендеры</h2>
+    <p class="page-subtitle">Создание и управление тендерами</p>
+</div>
+<div class="filters-bar">
+    <a href="/tenders" class="{% if not request.query_params.get('status') %}active{% endif %}">Все</a>
+    <a href="/tenders?status=draft" class="{% if request.query_params.get('status') == 'draft' %}active{% endif %}">Черновики</a>
+    <a href="/tenders?status=open" class="{% if request.query_params.get('status') == 'open' %}active{% endif %}">Открытые</a>
+    <a href="/tenders?status=in_progress" class="{% if request.query_params.get('status') == 'in_progress' %}active{% endif %}">В работе</a>
+    <a href="/tenders?status=closed" class="{% if request.query_params.get('status') == 'closed' %}active{% endif %}">Закрытые</a>
+    <a href="/tenders/create" class="btn btn-success btn-sm">➕ Создать тендер</a>
+</div>
+<div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Название</th>
+                <th>Город</th>
+                <th>Категория</th>
+                <th>Статус</th>
+                <th>Создатель</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in tenders %}
+            <tr>
+                <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
+                <td><a href="/tenders/{{ t.id }}">{{ t.title }}</a></td>
+                <td>{{ t.city }}</td>
+                <td><span class="badge badge-neutral">{{ t.category }}</span></td>
+                <td><span class="badge badge-neutral">{{ t.status|translate_status }}</span></td>
+                <td>{% if t.creator %}<a href="/users/{{ t.creator.id }}">{{ t.creator.full_name }}</a>{% else %}—{% endif %}</td>
+                <td>
+                    <a href="/tenders/{{ t.id }}/edit" class="btn btn-warning btn-sm">✏️</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if not tenders %}
+<p class="empty-state">Тендеров не найдено.</p>
+{% endif %}
 {% endblock %}

@@ -54,6 +54,59 @@ class Settings(BaseSettings):
     WEB_HOST: str = Field(default="0.0.0.0", description="Хост для веб-сервера")
     WEB_PORT: int = Field(default=8000, description="Порт веб-сервера")
 
+    # Telegram Mini App (Web App) — базовый URL для кнопки «Открыть приложение»
+    MINIAPP_BASE_URL: str = Field(
+        default="http://localhost:8000",
+        description="Публичный URL веб-сервера (для Mini App нужен HTTPS в продакшене)",
+    )
+    
+    # Database Pool Settings
+    DB_POOL_SIZE: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Размер пула соединений БД (минимум постоянных соединений)",
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default=10,
+        ge=0,
+        le=50,
+        description="Максимальное количество временных соединений сверх pool_size",
+    )
+    DB_POOL_RECYCLE: int = Field(
+        default=3600,
+        ge=60,
+        description="Время жизни соединения в секундах перед переподключением",
+    )
+    DB_POOL_PRE_PING: bool = Field(
+        default=True,
+        description="Проверять соединение перед использованием",
+    )
+    
+    # Cache Settings
+    CACHE_TTL_USER_PROFILE: int = Field(
+        default=300,
+        ge=60,
+        description="TTL кэша профиля пользователя в секундах",
+    )
+    CACHE_TTL_MENU: int = Field(
+        default=60,
+        ge=10,
+        description="TTL кэша меню в секундах",
+    )
+    
+    # Rate Limiting
+    RATE_LIMIT_REQUESTS: int = Field(
+        default=10,
+        ge=1,
+        description="Количество запросов на период для rate limiting",
+    )
+    RATE_LIMIT_PERIOD: int = Field(
+        default=60,
+        ge=1,
+        description="Период rate limiting в секундах",
+    )
+
     # Документы при регистрации: разрешённые типы и размер
     ALLOWED_DOCUMENT_EXTENSIONS: list[str] = Field(
         default=[".pdf", ".jpg", ".jpeg", ".png"],

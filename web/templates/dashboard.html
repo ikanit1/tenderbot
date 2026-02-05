@@ -1,44 +1,115 @@
 {% extends "base.html" %}
 {% block title %}Дашборд — TenderBot Admin{% endblock %}
+{% block header_title %}Дашборд{% endblock %}
 {% block content %}
-<h1>Дашборд</h1>
-<p>Пользователей: <strong>{{ users_total }}</strong></p>
-<ul>
-    {% for row in users_by_role %}
-    <li>{{ row[0] }}: {{ row[1] }}</li>
-    {% endfor %}
-</ul>
-<p>Тендеров: <strong>{{ tenders_total }}</strong></p>
-<ul>
-    {% for row in tenders_by_status %}
-    <li>{{ row[0] }}: {{ row[1] }}</li>
-    {% endfor %}
-</ul>
-<p>Откликов сегодня: <strong>{{ apps_today }}</strong>, за неделю: <strong>{{ apps_week }}</strong></p>
-<h2>Последние пользователи</h2>
-<table>
-    <tr><th>ID</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Город</th></tr>
-    {% for u in recent_users %}
-    <tr>
-        <td>{{ u.id }}</td>
-        <td><a href="/users/{{ u.id }}">{{ u.full_name }}</a></td>
-        <td>{{ u.role }}</td>
-        <td>{{ u.status }}</td>
-        <td>{{ u.city }}</td>
-    </tr>
-    {% endfor %}
-</table>
-<p><a href="/users">Все пользователи</a> | <a href="/tenders">Все тендеры</a> | <a href="/applications">Отклики</a> | <a href="/reviews">Отзывы</a> | <a href="/support">Поддержка</a></p>
-<h2>Последние тендеры</h2>
-<table>
-    <tr><th>ID</th><th>Название</th><th>Город</th><th>Статус</th></tr>
-    {% for t in recent_tenders %}
-    <tr>
-        <td>{{ t.id }}</td>
-        <td><a href="/tenders/{{ t.id }}">{{ t.title }}</a></td>
-        <td>{{ t.city }}</td>
-        <td>{{ t.status }}</td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="page-header">
+    <h2 class="page-title">Дашборд</h2>
+    <p class="page-subtitle">Сводка по пользователям, тендерам и откликам</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-card-icon primary">👥</div>
+        <p class="stat-card-value">{{ users_total }}</p>
+        <p class="stat-card-label">Пользователей</p>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-icon info">📋</div>
+        <p class="stat-card-value">{{ tenders_total }}</p>
+        <p class="stat-card-label">Тендеров</p>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-icon success">📩</div>
+        <p class="stat-card-value">{{ apps_today }}</p>
+        <p class="stat-card-label">Откликов сегодня</p>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card-icon warning">📊</div>
+        <p class="stat-card-value">{{ apps_week }}</p>
+        <p class="stat-card-label">Откликов за неделю</p>
+    </div>
+</div>
+
+<div class="detail-grid">
+    <div class="card">
+        <h3 class="card-title">Пользователи по ролям</h3>
+        <ul class="list-compact">
+            {% for row in users_by_role %}
+            <li><span>{{ row[0]|translate_role }}</span><span class="badge badge-neutral">{{ row[1] }}</span></li>
+            {% endfor %}
+        </ul>
+    </div>
+    <div class="card">
+        <h3 class="card-title">Тендеры по статусам</h3>
+        <ul class="list-compact">
+            {% for row in tenders_by_status %}
+            <li><span>{{ row[0]|translate_status }}</span><span class="badge badge-neutral">{{ row[1] }}</span></li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<div class="card">
+    <h3 class="card-title">Последние пользователи</h3>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>ФИО</th>
+                    <th>Роль</th>
+                    <th>Статус</th>
+                    <th>Город</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in recent_users %}
+                <tr>
+                    <td><a href="/users/{{ u.id }}">{{ u.id }}</a></td>
+                    <td><a href="/users/{{ u.id }}">{{ u.full_name }}</a></td>
+                    <td><span class="badge badge-neutral">{{ u.role|translate_role }}</span></td>
+                    <td><span class="badge {% if u.status == 'active' %}badge-success{% elif u.status == 'pending_moderation' %}badge-warning{% else %}badge-danger{% endif %}">{{ u.status|translate_status }}</span></td>
+                    <td>{{ u.city }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="card-body">
+        <a href="/users" class="btn btn-secondary btn-sm">Все пользователи</a>
+        <a href="/tenders" class="btn btn-ghost btn-sm">Тендеры</a>
+        <a href="/applications" class="btn btn-ghost btn-sm">Отклики</a>
+        <a href="/reviews" class="btn btn-ghost btn-sm">Отзывы</a>
+        <a href="/support" class="btn btn-ghost btn-sm">Поддержка</a>
+    </p>
+</div>
+
+<div class="card">
+    <h3 class="card-title">Последние тендеры</h3>
+    <div class="table-wrap">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Название</th>
+                    <th>Город</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in recent_tenders %}
+                <tr>
+                    <td><a href="/tenders/{{ t.id }}">{{ t.id }}</a></td>
+                    <td><a href="/tenders/{{ t.id }}">{{ t.title }}</a></td>
+                    <td>{{ t.city }}</td>
+                    <td><span class="badge badge-neutral">{{ t.status|translate_status }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="card-body">
+        <a href="/tenders" class="btn btn-secondary btn-sm">Все тендеры</a>
+    </p>
+</div>
 {% endblock %}

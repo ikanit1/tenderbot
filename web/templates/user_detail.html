@@ -1,20 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Пользователь {{ user.id }} — TenderBot Admin{% endblock %}
+{% block header_title %}Карточка пользователя{% endblock %}
 {% block content %}
-<h1>{{ user.full_name }}</h1>
-<div style="margin-bottom: 1rem;">
-    <a href="/users/{{ user.id }}/edit" style="padding: 0.5rem 1rem; background: #ffc107; color: black; text-decoration: none; border-radius: 4px; margin-right: 0.5rem;">✏️ Редактировать</a>
-    <a href="/users" style="padding: 0.5rem 1rem; background: #6c757d; color: white; text-decoration: none; border-radius: 4px;">← К списку</a>
+<div class="page-header">
+    <h2 class="page-title">{{ user.full_name }}</h2>
+    <p class="page-subtitle">ID {{ user.id }} · Telegram ID {{ user.tg_id }}</p>
 </div>
-
-<div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+<div class="detail-actions">
+    <a href="/users/{{ user.id }}/edit" class="btn btn-warning">✏️ Редактировать</a>
+    <a href="/users" class="btn btn-secondary">← К списку</a>
+</div>
+<div class="detail-info">
     <p><strong>ID:</strong> {{ user.id }}</p>
-    <p><strong>TG ID:</strong> {{ user.tg_id }}</p>
-    <p><strong>Роль:</strong> {{ user.role }}</p>
-    <p><strong>Статус:</strong> 
-        {% if user.status == "active" %}<span style="color: green;">✅ Активен</span>{% endif %}
-        {% if user.status == "pending_moderation" %}<span style="color: orange;">⏳ На модерации</span>{% endif %}
-        {% if user.status == "banned" %}<span style="color: red;">❌ Заблокирован</span>{% endif %}
+    <p><strong>Telegram ID:</strong> {{ user.tg_id }}</p>
+    <p><strong>Роль:</strong> <span class="badge badge-neutral">{{ user.role|translate_role }}</span></p>
+    <p><strong>Статус:</strong>
+        <span class="badge {% if user.status == 'active' %}badge-success{% elif user.status == 'pending_moderation' %}badge-warning{% else %}badge-danger{% endif %}">{{ user.status|translate_status }}</span>
     </p>
     <p><strong>Город:</strong> {{ user.city }}</p>
     <p><strong>Телефон:</strong> {{ user.phone }}</p>
@@ -28,45 +29,49 @@
 </div>
 
 {% if documents_list %}
-<div style="background: #e7f3ff; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; border: 1px solid #b6d4fe;">
+<div class="card moderation-block">
     <h3>📎 Архив документов пользователя</h3>
-    <p>Проверьте приложенные файлы (идентификация по Telegram ID). Разрешены: фото (JPEG, PNG), PDF. После модерации документы можно удалить.</p>
-    {% for doc in documents_list %}
-    <p style="margin: 0.5rem 0;">
-        {% if doc.type == "photo" %}
-        <a href="/users/by-tg/{{ user.tg_id }}/document?index={{ loop.index0 }}" target="_blank" rel="noopener" style="padding: 0.5rem 1rem; background: #0d6efd; color: white; text-decoration: none; border-radius: 4px;">🖼️ Фото {{ loop.index }}</a>
-        {% else %}
-        <a href="/users/by-tg/{{ user.tg_id }}/document?index={{ loop.index0 }}" target="_blank" rel="noopener" style="padding: 0.5rem 1rem; background: #0d6efd; color: white; text-decoration: none; border-radius: 4px;">📄 Документ {{ loop.index }}</a>
-        {% if doc.file_name %}<span style="color: #666;"> — {{ doc.file_name }}</span>{% endif %}
-        {% endif %}
-    </p>
-    {% endfor %}
+    <p class="form-hint">Проверьте приложенные файлы (идентификация по Telegram ID). Разрешены: фото (JPEG, PNG), PDF. После модерации документы можно удалить.</p>
+    <ul class="doc-list">
+        {% for doc in documents_list %}
+        <li>
+            {% if doc.type == "photo" %}
+            <a href="/users/by-tg/{{ user.tg_id }}/document?index={{ loop.index0 }}" target="_blank" rel="noopener">🖼️ Фото {{ loop.index }}</a>
+            {% else %}
+            <a href="/users/by-tg/{{ user.tg_id }}/document?index={{ loop.index0 }}" target="_blank" rel="noopener">📄 Документ {{ loop.index }}</a>
+            {% if doc.file_name %}<span class="form-hint"> — {{ doc.file_name }}</span>{% endif %}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
     <form method="post" action="/users/{{ user.id }}/documents/delete" style="margin-top: 0.75rem;" onsubmit="return confirm('Удалить приложенные документы у этого пользователя? Ссылки на файлы будут удалены.');">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">🗑 Удалить документы</button>
+        <button type="submit" class="btn btn-danger">🗑 Удалить документы</button>
     </form>
 </div>
 {% endif %}
 
-<div style="margin-bottom: 1rem;">
-    <h3>Действия модерации:</h3>
-    {% if user.status == "pending_moderation" %}
-    <form method="post" action="/users/{{ user.id }}/approve" style="display: inline-block;">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px;">✅ Одобрить</button>
-    </form>
-    <form method="post" action="/users/{{ user.id }}/reject" style="display: inline-block; margin-left: 0.5rem;">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">❌ Отклонить</button>
-    </form>
-    {% elif user.status == "banned" %}
-    <form method="post" action="/users/{{ user.id }}/unban" style="display: inline-block;">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #28a745; color: white; border: none; cursor: pointer; border-radius: 4px;">🔓 Разблокировать</button>
-    </form>
-    {% elif user.status == "active" %}
-    <form method="post" action="/users/{{ user.id }}/ban" style="display: inline-block;">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 4px;">🚫 Заблокировать</button>
-    </form>
-    {% endif %}
-    <form method="post" action="/users/{{ user.id }}/delete" style="display: inline-block; margin-left: 1rem;" onsubmit="return confirm('Удалить пользователя безвозвратно? Отклики, тикеты поддержки и отзывы будут удалены.');">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #343a40; color: white; border: none; cursor: pointer; border-radius: 4px;">🗑 Удалить пользователя</button>
-    </form>
+<div class="card">
+    <h3 class="card-title">Действия модерации</h3>
+    <div class="btn-group">
+        {% if user.status == "pending_moderation" %}
+        <form method="post" action="/users/{{ user.id }}/approve" style="display: inline-block;">
+            <button type="submit" class="btn btn-success">✅ Одобрить</button>
+        </form>
+        <form method="post" action="/users/{{ user.id }}/reject" style="display: inline-block;">
+            <button type="submit" class="btn btn-danger">❌ Отклонить</button>
+        </form>
+        {% elif user.status == "banned" %}
+        <form method="post" action="/users/{{ user.id }}/unban" style="display: inline-block;">
+            <button type="submit" class="btn btn-success">🔓 Разблокировать</button>
+        </form>
+        {% elif user.status == "active" %}
+        <form method="post" action="/users/{{ user.id }}/ban" style="display: inline-block;">
+            <button type="submit" class="btn btn-danger">🚫 Заблокировать</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/users/{{ user.id }}/delete" style="display: inline-block;" onsubmit="return confirm('Удалить пользователя безвозвратно? Отклики, тикеты поддержки и отзывы будут удалены.');">
+            <button type="submit" class="btn btn-secondary">🗑 Удалить пользователя</button>
+        </form>
+    </div>
 </div>
 {% endblock %}

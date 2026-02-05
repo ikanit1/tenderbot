@@ -1,4 +1,5 @@
 # handlers/admin.py — модерация пользователей и создание тендеров
+import logging
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,6 +13,11 @@ from database.models import User, Tender, TenderApplication, Review, UserStatus,
 from states.admin import ReviewStates
 from utils import is_admin
 from utils.chat_utils import answer_with_cleanup
+from utils.validators import parse_callback_id, parse_callback_parts
+from utils.menu_updater import send_notification_with_menu_update, refresh_user_menu_on_state_change
+from services.user_service import UserService
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -25,21 +31,52 @@ async def moderation_approve(
     if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
-    user_id = int(callback.data.replace("mod_approve:", ""))
+    
+    user_id = parse_callback_id(callback.data, "mod_approve:")
+    if user_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
+    
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         await callback.answer("Пользователь не найден.", show_alert=True)
         return
-    user.status = UserStatus.ACTIVE.value
-    await session.flush()
+    
+    old_status = user.status
+    updated_user = await UserService.update_user_status(session, user_id, UserStatus.ACTIVE.value)
+    if not updated_user:
+        await callback.answer("Ошибка обновления статуса.", show_alert=True)
+        return
+    
     await callback.message.edit_text(
         callback.message.text + "\n\n✅ Одобрено."
     )
-    await callback.bot.send_message(
-        user.tg_id,
-        "Ваша заявка одобрена. Теперь вы будете получать уведомления о подходящих тендерах."
+    
+    # Уведомление в чат
+    notification_text = (
+        "✅ <b>Ваша заявка одобрена!</b>\n\n"
+        "Теперь вы можете смотреть заказы и откликаться.\n\n"
+        "Нажмите <b>«📱 Открыть приложение»</b> в меню."
     )
+    await send_notification_with_menu_update(
+        bot=callback.bot,
+        user_tg_id=updated_user.tg_id,
+        message_text=notification_text,
+        session=session,
+        update_menu=True,
+    )
+    
+    # Обновляем меню при изменении статуса
+    await refresh_user_menu_on_state_change(
+        bot=callback.bot,
+        user_tg_id=updated_user.tg_id,
+        session=session,
+        old_status=old_status,
+        new_status=updated_user.status,
+    )
+    
+    logger.info(f"User {user_id} approved by admin {callback.from_user.id}")
     await callback.answer("Пользователь одобрен.")
 
 
@@ -51,21 +88,52 @@ async def moderation_reject(
     if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
-    user_id = int(callback.data.replace("mod_reject:", ""))
+    
+    user_id = parse_callback_id(callback.data, "mod_reject:")
+    if user_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
+    
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         await callback.answer("Пользователь не найден.", show_alert=True)
         return
-    user.status = UserStatus.BANNED.value
-    await session.flush()
+    
+    old_status = user.status
+    updated_user = await UserService.update_user_status(session, user_id, UserStatus.BANNED.value)
+    if not updated_user:
+        await callback.answer("Ошибка обновления статуса.", show_alert=True)
+        return
+    
     await callback.message.edit_text(
         callback.message.text + "\n\n❌ Отклонено."
     )
-    await callback.bot.send_message(
-        user.tg_id,
-        "К сожалению, ваша заявка отклонена."
+    
+    # Отправляем уведомление с автоматическим обновлением меню
+    notification_text = (
+        "❌ <b>Ваша заявка отклонена</b>\n\n"
+        "К сожалению, ваша заявка на регистрацию была отклонена администратором.\n"
+        "Если у вас есть вопросы, обратитесь в поддержку."
     )
+    await send_notification_with_menu_update(
+        bot=callback.bot,
+        user_tg_id=updated_user.tg_id,
+        message_text=notification_text,
+        session=session,
+        update_menu=True,
+    )
+    
+    # Обновляем меню при изменении статуса
+    await refresh_user_menu_on_state_change(
+        bot=callback.bot,
+        user_tg_id=updated_user.tg_id,
+        session=session,
+        old_status=old_status,
+        new_status=updated_user.status,
+    )
+    
+    logger.info(f"User {user_id} rejected by admin {callback.from_user.id}")
     await callback.answer("Пользователь отклонён.")
 
 
@@ -93,12 +161,13 @@ async def cmd_admin_menu(message: Message, session: AsyncSession, state: FSMCont
             reply_markup=get_admin_menu_kb(),
         )
     elif message.text == "🏠 Главное меню":
-        user_role = user.role if user else None
-        pending = user and user.status == UserStatus.PENDING_MODERATION.value
-        await answer_with_cleanup(
-            message,
-            "🏠 <b>Главное меню</b>",
-            reply_markup=get_main_menu_kb(user_role, is_admin(message.from_user.id), is_pending_moderation=pending),
+        # Всегда показываем актуальное меню с учетом текущего состояния
+        from utils.menu_updater import ensure_menu_visible
+        await ensure_menu_visible(
+            bot=message.bot,
+            user_tg_id=message.from_user.id,
+            session=session,
+            welcome_text="🏠 <b>Главное меню</b>",
         )
 
 
@@ -248,9 +317,17 @@ async def tenders_page_callback(callback: CallbackQuery, session: AsyncSession) 
     if not is_admin(callback.from_user.id):
         await callback.answer("Доступ запрещён.", show_alert=True)
         return
-    parts = callback.data.replace("tenders_page:", "").split(":")
+    
+    parts = parse_callback_parts(callback.data, "tenders_page:", expected_parts=2)
+    if parts is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
+    
     status_filter = parts[0] if parts[0] != "all" else None
-    offset = int(parts[1]) if len(parts) > 1 else PAGE_SIZE
+    try:
+        offset = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else PAGE_SIZE
+    except (ValueError, IndexError):
+        offset = PAGE_SIZE
     q = select(Tender).order_by(Tender.id.desc()).offset(offset).limit(PAGE_SIZE + 1)
     if status_filter:
         q = q.where(Tender.status == status_filter)
@@ -366,7 +443,10 @@ async def publish_tender(
     session: AsyncSession,
 ) -> None:
     """Опубликовать черновик тендера: статус open, рассылка исполнителям."""
-    tender_id = int(callback.data.replace("publish:", ""))
+    tender_id = parse_callback_id(callback.data, "publish:")
+    if tender_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
     result = await session.execute(
         select(Tender).where(Tender.id == tender_id, Tender.status == TenderStatus.DRAFT.value)
     )
@@ -407,13 +487,16 @@ async def publish_tender(
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Откликнуться", callback_data=f"apply:{tender.id}")]
     ])
+    sent_count = 0
     for u in users:
         try:
             await callback.bot.send_message(u.tg_id, tender_text, reply_markup=kb)
-        except Exception:
-            pass
+            sent_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to send tender notification to user {u.tg_id}: {e}")
+    logger.info(f"Tender {tender_id} published by {callback.from_user.id}, notifications sent to {sent_count}/{len(users)} users")
     await callback.message.edit_text(
-        callback.message.text + "\n\n✅ Опубликовано. Уведомления отправлены " + str(len(users)) + " исполнителям."
+        callback.message.text + f"\n\n✅ Опубликовано. Уведомления отправлены {sent_count} из {len(users)} исполнителям."
     )
     await callback.answer("Тендер опубликован.")
 
@@ -425,7 +508,10 @@ async def admin_select_executor(
     session: AsyncSession,
 ) -> None:
     """Выбор исполнителя: тендер in_progress, отклик selected, остальные rejected. Доступ: админ или создатель тендера."""
-    app_id = int(callback.data.replace("select_user:", ""))
+    app_id = parse_callback_id(callback.data, "select_user:")
+    if app_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
     result = await session.execute(
         select(TenderApplication)
         .options(
@@ -448,23 +534,50 @@ async def admin_select_executor(
             return
     app.status = "selected"
     tender.status = TenderStatus.IN_PROGRESS.value
-    # Остальные отклики по этому тендеру — rejected
+    # Остальные отклики по этому тендеру — rejected; уведомляем их в чат
     result = await session.execute(
-        select(TenderApplication).where(
+        select(TenderApplication)
+        .options(selectinload(TenderApplication.user))
+        .where(
             TenderApplication.tender_id == tender.id,
             TenderApplication.id != app.id,
         )
     )
     for other in result.scalars().all():
         other.status = "rejected"
+        try:
+            await callback.bot.send_message(
+                other.user.tg_id,
+                f"❌ <b>Отклик отклонён</b>\n\n"
+                f"По тендеру «{tender.title}» выбран другой исполнитель.\n\n"
+                f"Откройте приложение и откликнитесь на другие заказы.",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify rejected applicant {other.user.tg_id}: {e}")
     await session.flush()
     await callback.message.edit_text(
         callback.message.text + "\n\n✅ Исполнитель выбран."
     )
-    await callback.bot.send_message(
-        app.user.tg_id,
-        f"Вас выбрали исполнителем по тендеру «{tender.title}». Администраторы свяжутся с вами для уточнения деталей."
+    
+    # Уведомление в чат
+    notification_text = (
+        f"✅ <b>Вас выбрали исполнителем!</b>\n\n"
+        f"Тендер: <b>{tender.title}</b>\n\n"
+        f"📍 Город: {tender.city}\n"
+        f"🏷️ Категория: {tender.category}\n"
+        f"💰 Бюджет: {tender.budget or 'по договорённости'}\n\n"
+        f"⏳ В скором времени с вами свяжутся для уточнения деталей.\n\n"
+        f"📱 Статус откликов — в приложении (кнопка «Открыть приложение»)."
     )
+    await send_notification_with_menu_update(
+        bot=callback.bot,
+        user_tg_id=app.user.tg_id,
+        message_text=notification_text,
+        session=session,
+        update_menu=True,
+    )
+    
+    logger.info(f"Executor {app.user_id} selected for tender {tender.id} by {callback.from_user.id}")
     await callback.answer("Исполнитель выбран.")
 
 
@@ -474,7 +587,10 @@ async def close_tender_callback(
     callback: CallbackQuery,
     session: AsyncSession,
 ) -> None:
-    tender_id = int(callback.data.replace("close_tender:", ""))
+    tender_id = parse_callback_id(callback.data, "close_tender:")
+    if tender_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
     result = await session.execute(select(Tender).where(Tender.id == tender_id))
     tender = result.scalar_one_or_none()
     if not tender:
@@ -511,8 +627,9 @@ async def close_tender_callback(
                 f"Тендер «{tender.title}» закрыт. Оцените работу исполнителя?",
                 reply_markup=kb,
             )
-        except Exception:
-            pass
+            logger.info(f"Tender {tender_id} closed by {callback.from_user.id}")
+        except Exception as e:
+            logger.error(f"Failed to send close notification to creator {tender.creator.tg_id}: {e}")
     await callback.answer("Тендер закрыт.")
 
 
@@ -521,7 +638,10 @@ async def cancel_tender_callback(
     callback: CallbackQuery,
     session: AsyncSession,
 ) -> None:
-    tender_id = int(callback.data.replace("cancel_tender:", ""))
+    tender_id = parse_callback_id(callback.data, "cancel_tender:")
+    if tender_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
     result = await session.execute(select(Tender).where(Tender.id == tender_id))
     tender = result.scalar_one_or_none()
     if not tender:
@@ -535,6 +655,7 @@ async def cancel_tender_callback(
             return
     tender.status = TenderStatus.CANCELLED.value
     await session.flush()
+    logger.info(f"Tender {tender_id} cancelled by {callback.from_user.id}")
     await callback.message.edit_text(
         (callback.message.text or "") + "\n\n❌ Тендер отменён."
     )
@@ -549,7 +670,10 @@ async def rate_tender_start(
     session: AsyncSession,
 ) -> None:
     """Начало оценки: только создатель тендера, по выбранному отклику."""
-    tender_id = int(callback.data.replace("rate:", ""))
+    tender_id = parse_callback_id(callback.data, "rate:")
+    if tender_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
     result = await session.execute(
         select(Tender)
         .options(selectinload(Tender.creator))
@@ -609,8 +733,8 @@ async def review_rating_callback(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    rating = int(callback.data.replace("rating:", ""))
-    if rating not in (1, 2, 3, 4, 5):
+    rating = parse_callback_id(callback.data, "rating:")
+    if rating is None or rating not in (1, 2, 3, 4, 5):
         await callback.answer("Выберите оценку от 1 до 5.", show_alert=True)
         return
     await state.update_data(rating=rating)
@@ -648,6 +772,7 @@ async def review_comment_submit(
                 f"Вам поставили оценку {data['rating']}/5 по тендеру."
                 + (f" Комментарий: {comment}" if comment else ""),
             )
-        except Exception:
-            pass
+            logger.info(f"Review created for user {data['to_user_id']} by user {data['from_user_id']} for tender {data['tender_id']}")
+        except Exception as e:
+            logger.error(f"Failed to send review notification to user {to_user.tg_id}: {e}")
     await message.answer("Спасибо, ваш отзыв сохранён.")

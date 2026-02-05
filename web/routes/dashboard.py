@@ -3,17 +3,15 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from pathlib import Path
 
 from web.database import get_db
 from web.auth import get_session_user
+from web.templates_loader import templates
 from database.models import User, Tender, TenderApplication, Review
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

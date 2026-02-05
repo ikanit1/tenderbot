@@ -1,17 +1,15 @@
 # web/routes/reviews.py
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from pathlib import Path
 
 from web.database import get_db
 from web.auth import get_session_user
+from web.templates_loader import templates
 from database.models import Review, User
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.post("/{review_id}/delete", response_class=RedirectResponse)

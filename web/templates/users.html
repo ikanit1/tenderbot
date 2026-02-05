@@ -1,19 +1,46 @@
 {% extends "base.html" %}
 {% block title %}Пользователи — TenderBot Admin{% endblock %}
+{% block header_title %}Пользователи{% endblock %}
 {% block content %}
-<h1>Пользователи</h1>
-<p><a href="/users">Все</a> | <a href="/users?role=executor">Исполнители</a> | <a href="/users?status=active">Активные</a> | <a href="/users?status=pending_moderation">На модерации</a></p>
-<table>
-    <tr><th>ID</th><th>ФИО</th><th>Роль</th><th>Статус</th><th>Город</th><th>Рейтинг</th></tr>
-    {% for u in users %}
-    <tr>
-        <td><a href="/users/{{ u.id }}">{{ u.id }}</a></td>
-        <td>{{ u.full_name }}</td>
-        <td>{{ u.role }}</td>
-        <td>{{ u.status }}</td>
-        <td>{{ u.city }}</td>
-        <td>{% if u.id in ratings %}★ {{ "%.1f"|format(ratings[u.id][0]) }} ({{ ratings[u.id][1] }}){% else %}—{% endif %}</td>
-    </tr>
-    {% endfor %}
-</table>
+<div class="page-header">
+    <h2 class="page-title">Пользователи</h2>
+    <p class="page-subtitle">Поиск и фильтрация по роли и статусу</p>
+</div>
+<div class="filters-bar">
+    <a href="/users" class="{% if not request.query_params.get('role') and not request.query_params.get('status') %}active{% endif %}">Все</a>
+    <a href="/users?role=executor" class="{% if request.query_params.get('role') == 'executor' %}active{% endif %}">Исполнители</a>
+    <a href="/users?status=active" class="{% if request.query_params.get('status') == 'active' %}active{% endif %}">Активные</a>
+    <a href="/users?status=pending_moderation" class="{% if request.query_params.get('status') == 'pending_moderation' %}active{% endif %}">На модерации</a>
+</div>
+<div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>ФИО</th>
+                <th>Роль</th>
+                <th>Статус</th>
+                <th>Город</th>
+                <th>Рейтинг</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td><a href="/users/{{ u.id }}">{{ u.id }}</a></td>
+                <td><a href="/users/{{ u.id }}">{{ u.full_name }}</a></td>
+                <td><span class="badge badge-neutral">{{ u.role|translate_role }}</span></td>
+                <td>
+                    <span class="badge {% if u.status == 'active' %}badge-success{% elif u.status == 'pending_moderation' %}badge-warning{% else %}badge-danger{% endif %}">{{ u.status|translate_status }}</span>
+                </td>
+                <td>{{ u.city }}</td>
+                <td>{% if u.id in ratings %}★ {{ "%.1f"|format(ratings[u.id][0]) }} ({{ ratings[u.id][1] }}){% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if not users %}
+<p class="empty-state">Пользователей не найдено.</p>
+{% endif %}
 {% endblock %}

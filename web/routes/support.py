@@ -1,20 +1,18 @@
 # web/routes/support.py — тикеты поддержки в веб-админке
 import httpx
-from pathlib import Path
 
 from fastapi import APIRouter, Request, Depends, Query, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
 
 from config import settings
 from web.database import get_db
 from web.auth import get_session_user
+from web.templates_loader import templates
 from database.models import User, SupportTicket, SupportMessage, TicketStatus
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.get("", response_class=HTMLResponse)

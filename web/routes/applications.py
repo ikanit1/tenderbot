@@ -1,17 +1,15 @@
 # web/routes/applications.py
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
-from pathlib import Path
 
 from web.database import get_db
 from web.auth import get_session_user
+from web.templates_loader import templates
 from database.models import TenderApplication
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 
 @router.post("/{application_id}/delete", response_class=RedirectResponse)

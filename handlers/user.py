@@ -22,8 +22,11 @@ from handlers.keyboards import (
     get_profile_edit_kb,
     get_help_kb,
 )
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from utils.chat_utils import answer_with_cleanup, clear_user_messages
 from utils.ui_manager import answer_ui
+from utils.validators import validate_string_length, validate_date_range, parse_callback_id
+from utils.menu_updater import ensure_menu_visible
 
 router = Router()
 
@@ -74,17 +77,18 @@ async def cmd_start(
         )
         return
     
-    # Пользователь активен
+    # Пользователь активен — всё в Mini App, уведомления приходят в чат
     welcome_back = (
-        f"👷 <b>Добро пожаловать обратно!</b>\n\n"
-        f"Вы зарегистрированы как <b>Исполнитель</b>.\n\n"
-        f"💡 Когда появятся подходящие тендеры, мы пришлём вам уведомление."
+        "👷 <b>Добро пожаловать!</b>\n\n"
+        "Весь функционал — заказы, отклики, профиль — в приложении.\n\n"
+        "Нажмите <b>«📱 Открыть приложение»</b> в меню.\n\n"
+        "💡 Уведомления о новых заказах и статусе откликов будут приходить сюда в чат."
     )
-    
-    await answer_with_cleanup(
-        message,
-        welcome_back,
-        reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False),
+    await ensure_menu_visible(
+        bot=message.bot,
+        user_tg_id=message.from_user.id,
+        session=session,
+        welcome_text=welcome_back,
     )
 
 
@@ -140,7 +144,12 @@ async def cmd_register(
 
 @router.message(RegistrationStates.full_name, F.text)
 async def step_full_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(full_name=message.text.strip())
+    full_name = message.text.strip()
+    is_valid, error_msg = validate_string_length(full_name, max_length=256, field_name="ФИО")
+    if not is_valid:
+        await answer_ui(message, f"❌ {error_msg}", state=state)
+        return
+    await state.update_data(full_name=full_name)
     await state.set_state(RegistrationStates.birth_date)
     await answer_ui(message, "Введите дату рождения в формате ДД.ММ.ГГГГ (например 15.05.1990):", state=state)
 
@@ -153,6 +162,18 @@ async def step_birth_date(message: Message, state: FSMContext) -> None:
     except ValueError:
         await answer_ui(message, "Неверный формат. Введите дату как ДД.ММ.ГГГГ:", state=state)
         return
+    
+    # Валидация диапазона даты рождения (не в будущем, не слишком давно)
+    from datetime import date
+    today = date.today()
+    min_date = date(1900, 1, 1)
+    max_date = today
+    
+    is_valid, error_msg = validate_date_range(dt, min_date=min_date, max_date=max_date, field_name="Дата рождения")
+    if not is_valid:
+        await answer_ui(message, f"❌ {error_msg}", state=state)
+        return
+    
     await state.update_data(birth_date=dt)
     await state.set_state(RegistrationStates.city)
     await answer_ui(message, "Введите город:", state=state)
@@ -160,7 +181,12 @@ async def step_birth_date(message: Message, state: FSMContext) -> None:
 
 @router.message(RegistrationStates.city, F.text)
 async def step_city(message: Message, state: FSMContext) -> None:
-    await state.update_data(city=message.text.strip())
+    city = message.text.strip()
+    is_valid, error_msg = validate_string_length(city, max_length=128, field_name="Город")
+    if not is_valid:
+        await answer_ui(message, f"❌ {error_msg}", state=state)
+        return
+    await state.update_data(city=city)
     await state.set_state(RegistrationStates.phone)
     await answer_ui(message, "Введите номер телефона (например +7 999 123-45-67):", state=state)
 
@@ -378,8 +404,32 @@ async def _submit_registration(
     from_user,
 ) -> None:
     """Сохранение исполнителя в БД и отправка заявки админу на модерацию."""
+    # Проверяем, не существует ли уже пользователь с таким tg_id
+    result = await session.execute(select(User).where(User.tg_id == from_user.id))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        await answer_with_cleanup(
+            message,
+            "❌ <b>Ошибка регистрации</b>\n\n"
+            "Пользователь с таким Telegram ID уже зарегистрирован.",
+            reply_markup=get_main_menu_kb(existing_user.role, message.from_user.id == settings.ADMIN_ID, is_pending_moderation=existing_user.status == UserStatus.PENDING_MODERATION.value),
+        )
+        await state.clear()
+        return
+    
     data = await state.get_data()
     birth_date = data.get("birth_date")
+    
+    # Финальная валидация длины полей перед сохранением
+    full_name_valid, full_name_error = validate_string_length(data.get("full_name", ""), max_length=256, field_name="ФИО")
+    city_valid, city_error = validate_string_length(data.get("city", ""), max_length=128, field_name="Город")
+    phone_valid, phone_error = validate_string_length(data.get("phone", ""), max_length=64, field_name="Телефон")
+    
+    if not (full_name_valid and city_valid and phone_valid):
+        error_msg = full_name_error or city_error or phone_error
+        await answer_with_cleanup(message, f"❌ {error_msg}")
+        return
+    
     user = User(
         tg_id=from_user.id,
         full_name=data["full_name"],
@@ -420,11 +470,20 @@ async def _submit_registration(
         text,
         reply_markup=kb,
     )
+    # Отправляем подтверждение и обновляем меню
     await answer_with_cleanup(
         message,
         "✅ <b>Заявка отправлена на модерацию</b>\n\n"
-        "Ожидайте решения администратора. Доступ к функциям бота будет после одобрения.",
+        "Ожидайте решения администратора. Доступ к функциям бота будет после одобрения.\n\n"
+        "💡 Меню обновится автоматически после модерации.",
         reply_markup=get_main_menu_kb(user.role, message.from_user.id == settings.ADMIN_ID, is_pending_moderation=True),
+    )
+    
+    # Убеждаемся, что меню видно
+    await ensure_menu_visible(
+        bot=message.bot,
+        user_tg_id=from_user.id,
+        session=session,
     )
 
 
@@ -448,60 +507,29 @@ async def _require_active_user(
 # ——— Профиль и мои отклики (исполнитель) ———
 @router.message(Command("profile"))
 @router.message(F.text == "👤 Мой профиль")
-async def cmd_profile(message: Message, session: AsyncSession, state: FSMContext) -> None:
-    """Просмотр своего профиля."""
+@router.message(F.text == "📋 Мои отклики")
+@router.message(F.text == "🔍 Искать заказы")
+async def cmd_redirect_to_app(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    """Редирект: профиль, отклики и заказы — в Mini App."""
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-    
     result = await session.execute(select(User).where(User.tg_id == message.from_user.id))
     user = result.scalar_one_or_none()
     is_admin = message.from_user.id == settings.ADMIN_ID
     if not user:
         await answer_with_cleanup(
             message,
-            "❌ <b>Профиль не найден</b>\n\n"
-            "Сначала пройдите регистрацию.",
+            "❌ Сначала пройдите регистрацию.",
             reply_markup=get_main_menu_kb(None, is_admin),
         )
         return
-    if await _require_active_user(message, user, is_admin):
-        return
-    
-    skills_str = ", ".join(user.skills) if user.skills else "—"
-    role_str = "👷 Исполнитель"
-    
-    status_emoji = {
-        UserStatus.PENDING_MODERATION.value: "⏳",
-        UserStatus.ACTIVE.value: "✅",
-        UserStatus.BANNED.value: "❌",
-    }
-    status_text = {
-        UserStatus.PENDING_MODERATION.value: "На модерации",
-        UserStatus.ACTIVE.value: "Активен",
-        UserStatus.BANNED.value: "Заблокирован",
-    }
-    
-    emoji = status_emoji.get(user.status, "•")
-    status_display = f"{emoji} {status_text.get(user.status, user.status)}"
-    
-    text = (
-        f"👤 <b>Ваш профиль</b>\n\n"
-        f"📝 <b>ФИО:</b> {user.full_name}\n"
-        f"📍 <b>Город:</b> {user.city}\n"
-        f"📞 <b>Телефон:</b> {user.phone}\n"
-        f"🎭 <b>Роль:</b> {role_str}\n"
-        f"🛠️ <b>Навыки:</b> {skills_str}\n"
-        f"📊 <b>Статус:</b> {status_display}\n"
-    )
-    
-    if user.birth_date:
-        text += f"\n🎂 <b>Дата рождения:</b> {user.birth_date.strftime('%d.%m.%Y')}"
-    
     await answer_with_cleanup(
         message,
-        text,
-        reply_markup=get_profile_edit_kb(),
+        "📱 <b>Откройте приложение</b>\n\n"
+        "Профиль, заказы и отклики доступны в Mini App.\n\n"
+        "Нажмите кнопку <b>«📱 Открыть приложение»</b> в меню ниже.",
+        reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=(user.status == UserStatus.PENDING_MODERATION.value)),
     )
 
 
@@ -547,7 +575,12 @@ async def cmd_edit_profile(
 
 @router.message(ProfileEditStates.city, F.text)
 async def edit_city(message: Message, state: FSMContext) -> None:
-    await state.update_data(city=message.text.strip())
+    city = message.text.strip()
+    is_valid, error_msg = validate_string_length(city, max_length=128, field_name="Город")
+    if not is_valid:
+        await message.answer(f"❌ {error_msg}")
+        return
+    await state.update_data(city=city)
     await state.set_state(ProfileEditStates.phone)
     await message.answer("Введите новый телефон:")
 
@@ -677,6 +710,10 @@ async def cmd_my_applications(
         )
         return
     
+    # Создаем развернутое меню с кнопками для каждого отклика
+    from handlers.keyboards import get_application_detail_kb
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
     status_emoji = {
         "applied": "⏳",
         "selected": "✅",
@@ -684,23 +721,172 @@ async def cmd_my_applications(
         "completed": "✔️"
     }
     status_text = {
-        "applied": "Ожидает",
-        "selected": "Выбран",
+        "applied": "Ожидает рассмотрения",
+        "selected": "Выбран исполнителем",
         "rejected": "Отклонён",
         "completed": "Завершён"
     }
     
-    lines = []
-    for a in apps[:10]:
-        em = status_emoji.get(a.status, "•")
-        status_display = status_text.get(a.status, a.status)
-        lines.append(f"{em} <b>{a.tender.title}</b> — {status_display}")
+    text = "📋 <b>Мои отклики</b>\n\n"
+    text += f"Всего откликов: <b>{len(apps)}</b>\n\n"
     
-    text = "📋 <b>Мои отклики</b>\n\n" + "\n".join(lines)
-    if len(apps) > 10:
-        text += f"\n\n... показаны последние 10 из {len(apps)}"
+    # Показываем первые 5 откликов с подробной информацией
+    for i, app in enumerate(apps[:5], 1):
+        em = status_emoji.get(app.status, "•")
+        status_display = status_text.get(app.status, app.status)
+        created_at_str = ""
+        if app.created_at:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            delta = now - app.created_at.replace(tzinfo=timezone.utc) if app.created_at.tzinfo is None else now - app.created_at
+            if delta.days > 0:
+                created_at_str = f" ({delta.days} дн. назад)"
+            elif delta.seconds > 3600:
+                created_at_str = f" ({delta.seconds // 3600} ч. назад)"
+            else:
+                created_at_str = f" ({delta.seconds // 60} мин. назад)"
+        
+        text += (
+            f"{i}. {em} <b>{app.tender.title}</b>\n"
+            f"   Статус: {status_display}{created_at_str}\n"
+            f"   Город: {app.tender.city} | Категория: {app.tender.category}\n\n"
+        )
     
-    await answer_with_cleanup(message, text, reply_markup=get_main_menu_kb(user.role, is_admin, is_pending_moderation=False))
+    if len(apps) > 5:
+        text += f"\n... и ещё {len(apps) - 5} откликов\n"
+    
+    # Создаем клавиатуру с кнопками для просмотра деталей каждого отклика
+    builder = InlineKeyboardBuilder()
+    for app in apps[:5]:
+        em = status_emoji.get(app.status, "•")
+        builder.button(
+            text=f"{em} {app.tender.title[:30]}...",
+            callback_data=f"app_detail:{app.id}"
+        )
+    
+    if len(apps) > 5:
+        builder.button(
+            text="📄 Показать все отклики",
+            callback_data="app_list_all"
+        )
+    
+    builder.button(
+        text="🔄 Обновить",
+        callback_data="my_applications"
+    )
+    builder.adjust(1)
+    
+    await answer_with_cleanup(
+        message,
+        text,
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("app_detail:"))
+async def application_detail_callback(
+    callback: CallbackQuery,
+    session: AsyncSession,
+) -> None:
+    """Детальный просмотр отклика пользователем."""
+    app_id = parse_callback_id(callback.data, "app_detail:")
+    if app_id is None:
+        await callback.answer("Ошибка обработки запроса.", show_alert=True)
+        return
+    
+    tg_id = callback.from_user.id
+    result = await session.execute(select(User).where(User.tg_id == tg_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        await callback.answer("Пользователь не найден.", show_alert=True)
+        return
+    
+    result = await session.execute(
+        select(TenderApplication)
+        .options(selectinload(TenderApplication.tender))
+        .where(
+            TenderApplication.id == app_id,
+            TenderApplication.user_id == user.id,
+        )
+    )
+    app = result.scalar_one_or_none()
+    
+    if not app:
+        await callback.answer("Отклик не найден.", show_alert=True)
+        return
+    
+    tender = app.tender
+    
+    status_emoji = {
+        "applied": "⏳",
+        "selected": "✅",
+        "rejected": "❌",
+        "completed": "✔️"
+    }
+    status_text = {
+        "applied": "Ожидает рассмотрения",
+        "selected": "Выбран исполнителем",
+        "rejected": "Отклонён",
+        "completed": "Завершён"
+    }
+    
+    em = status_emoji.get(app.status, "•")
+    status_display = status_text.get(app.status, app.status)
+    
+    # Форматируем даты
+    created_at_str = "Не указана"
+    if app.created_at:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        app_date = app.created_at.replace(tzinfo=timezone.utc) if app.created_at.tzinfo is None else app.created_at
+        created_at_str = app_date.strftime("%d.%m.%Y %H:%M")
+    
+    deadline_str = "Не указан"
+    if tender.deadline:
+        deadline_utc = tender.deadline
+        if deadline_utc.tzinfo is None:
+            deadline_utc = deadline_utc.replace(tzinfo=timezone.utc)
+        deadline_str = deadline_utc.strftime("%d.%m.%Y %H:%M")
+    
+    text = (
+        f"{em} <b>Детали отклика</b>\n\n"
+        f"📋 <b>Тендер:</b> {tender.title}\n"
+        f"📍 <b>Город:</b> {tender.city}\n"
+        f"🏷️ <b>Категория:</b> {tender.category}\n"
+        f"💰 <b>Бюджет:</b> {tender.budget or 'по договорённости'}\n"
+        f"⏰ <b>Дедлайн тендера:</b> {deadline_str}\n\n"
+        f"📊 <b>Статус отклика:</b> {status_display}\n"
+        f"📅 <b>Дата отклика:</b> {created_at_str}\n\n"
+        f"📝 <b>Описание тендера:</b>\n{tender.description}\n\n"
+    )
+    
+    if app.status == "selected":
+        text += "✅ <b>В скором времени с вами свяжется модератор</b> для уточнения деталей."
+    elif app.status == "rejected":
+        text += "❌ К сожалению, ваш отклик был отклонён. Попробуйте откликнуться на другие тендеры."
+    elif app.status == "applied":
+        text += "⏳ Ваш отклик находится на рассмотрении. Ожидайте решения заказчика."
+    
+    from handlers.keyboards import get_application_detail_kb
+    kb = get_application_detail_kb(app.id, tender.id)
+    
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "app_list_all")
+async def application_list_all_callback(
+    callback: CallbackQuery,
+    session: AsyncSession,
+) -> None:
+    """Показать все отклики пользователя."""
+    # Просто вызываем обработчик "Мои отклики"
+    await cmd_my_applications(callback, session, None)
 
 
 @router.message(F.text == "🔍 Искать заказы")

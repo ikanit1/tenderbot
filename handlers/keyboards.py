@@ -4,10 +4,16 @@ from aiogram.types import (
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from config import settings
 from database.models import UserRole, UserStatus, TenderStatus
+
+# URL Mini App для кнопки «Открыть приложение»
+def get_miniapp_url() -> str:
+    base = (settings.MINIAPP_BASE_URL or "").rstrip("/")
+    return f"{base}/miniapp/" if base else ""
 
 
 def get_main_menu_kb(
@@ -15,25 +21,29 @@ def get_main_menu_kb(
     is_admin: bool = False,
     is_pending_moderation: bool = False,
 ) -> ReplyKeyboardMarkup:
-    """Главное меню. При is_pending_moderation — только Помощь (доступ после модерации)."""
+    """Главное меню. Кнопка «Открыть приложение» ведёт в Mini App; уведомления приходят в чат."""
     builder = ReplyKeyboardBuilder()
-    
+    miniapp_url = get_miniapp_url()
+
     if is_pending_moderation:
+        if miniapp_url:
+            builder.button(text="📱 Открыть приложение", web_app=WebAppInfo(url=miniapp_url))
         if is_admin:
             builder.button(text="⚙️ Админ-панель")
         builder.button(text="ℹ️ Помощь")
         builder.adjust(2, 1)
     elif user_role == UserRole.EXECUTOR.value:
-        builder.button(text="📋 Мои отклики")
-        builder.button(text="👤 Мой профиль")
-        builder.button(text="🔍 Искать заказы")
+        if miniapp_url:
+            builder.button(text="📱 Открыть приложение", web_app=WebAppInfo(url=miniapp_url))
         builder.button(text="💬 Поддержка")
         if is_admin:
             builder.button(text="⚙️ Админ-панель")
         builder.button(text="ℹ️ Помощь")
-        builder.adjust(2, 2, 1)
+        builder.adjust(2, 1)
     else:
         builder.button(text="📝 Пройти регистрацию")
+        if miniapp_url:
+            builder.button(text="📱 Открыть приложение", web_app=WebAppInfo(url=miniapp_url))
         if is_admin:
             builder.button(text="⚙️ Админ-панель")
         builder.button(text="ℹ️ Помощь")
@@ -209,6 +219,21 @@ def get_application_actions_kb(application_id: int, tender_id: int) -> InlineKey
         callback_data=f"tender_detail:{tender_id}"
     )
     builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def get_application_detail_kb(application_id: int, tender_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для детального просмотра отклика пользователем."""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="👁️ Подробнее о тендере",
+        callback_data=f"tender_detail:{tender_id}"
+    )
+    builder.button(
+        text="📋 К списку откликов",
+        callback_data="my_applications"
+    )
+    builder.adjust(1)
     return builder.as_markup()
 
 

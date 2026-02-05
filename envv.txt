@@ -14,4 +14,8 @@ DATABASE_URL=sqlite+aiosqlite:///./test.db
 # WEB_SECRET_KEY=сложная_строка_для_сессий
 # ADMIN_PASSWORD=пароль_входа
 # WEB_HOST=0.0.0.0
-# WEB_PORT=8005
+# WEB_PORT=8000
+
+# Домен для веб-приложения и Mini App (обязательно HTTPS в продакшене)
+# Админка: https://grgroup.kz/  Mini App: https://grgroup.kz/miniapp/
+MINIAPP_BASE_URL=https://grgroup.kz

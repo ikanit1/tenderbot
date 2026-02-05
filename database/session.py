@@ -23,12 +23,24 @@ def get_engine() -> AsyncEngine:
         _connect_args = {}
         if "sqlite" in settings.DATABASE_URL:
             _connect_args["check_same_thread"] = False
-        _engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=False,
-            connect_args=_connect_args,
-            pool_pre_ping=("sqlite" not in settings.DATABASE_URL),
-        )
+            # Для SQLite не используем pool_size и max_overflow
+            _engine = create_async_engine(
+                settings.DATABASE_URL,
+                echo=False,
+                connect_args=_connect_args,
+                pool_pre_ping=False,  # SQLite не поддерживает
+            )
+        else:
+            # Для PostgreSQL и других БД используем настройки пула
+            _engine = create_async_engine(
+                settings.DATABASE_URL,
+                echo=False,
+                connect_args=_connect_args,
+                pool_size=settings.DB_POOL_SIZE,
+                max_overflow=settings.DB_MAX_OVERFLOW,
+                pool_recycle=settings.DB_POOL_RECYCLE,
+                pool_pre_ping=settings.DB_POOL_PRE_PING,
+            )
     return _engine
 
 
